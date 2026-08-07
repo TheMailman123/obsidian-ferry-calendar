@@ -15,8 +15,8 @@ import { launchCreateModal, launchEditModal } from "./event_modal";
 import { isTask, toggleTask, unmakeTask } from "src/ui/tasks";
 import { UpdateViewCallback } from "src/core/EventCache";
 
-export const FULL_CALENDAR_VIEW_TYPE = "full-calendar-view";
-export const FULL_CALENDAR_SIDEBAR_VIEW_TYPE = "full-calendar-sidebar-view";
+export const FULL_CALENDAR_VIEW_TYPE = "ferry-calendar-view";
+export const FULL_CALENDAR_SIDEBAR_VIEW_TYPE = "ferry-calendar-sidebar-view";
 
 function getCalendarColors(color: string | null | undefined): {
     color: string;
@@ -77,7 +77,7 @@ export class CalendarView extends ItemView {
     }
 
     getDisplayText() {
-        return this.inSidebar ? "Full Calendar" : "Calendar";
+        return this.inSidebar ? "Ferry Calendar" : "Calendar";
     }
 
     translateSources() {
@@ -96,7 +96,7 @@ export class CalendarView extends ItemView {
     async onOpen() {
         await this.plugin.loadSettings();
         if (!this.plugin.cache) {
-            new Notice("Full Calendar event cache not loaded.");
+            new Notice("Ferry Calendar event cache not loaded.");
             return;
         }
         if (!this.plugin.cache.initialized) {

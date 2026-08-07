@@ -6,7 +6,7 @@ export { validateEvent } from "./schema";
 export { makeDefaultPartialCalendarSource } from "./calendar_settings";
 export type { CalendarInfo } from "./calendar_settings";
 
-export const PLUGIN_SLUG = "full-calendar-plugin";
+export const PLUGIN_SLUG = "ferry-calendar";
 
 export class FCError {
     message: string;

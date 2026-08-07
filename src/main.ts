@@ -121,7 +121,7 @@ export default class FullCalendarPlugin extends Plugin {
 
         this.addRibbonIcon(
             "calendar-glyph",
-            "Open Full Calendar",
+            "Open Ferry Calendar",
             async (_: MouseEvent) => {
                 await this.activateView();
             }
@@ -130,7 +130,7 @@ export default class FullCalendarPlugin extends Plugin {
         this.addSettingTab(new FullCalendarSettingTab(this.app, this));
 
         this.addCommand({
-            id: "full-calendar-new-event",
+            id: "ferry-calendar-new-event",
             name: "New Event",
             callback: () => {
                 launchCreateModal(this, {});
@@ -138,7 +138,7 @@ export default class FullCalendarPlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "full-calendar-reset",
+            id: "ferry-calendar-reset",
             name: "Reset Event Cache",
             callback: () => {
                 this.cache.reset(this.settings.calendarSources);
@@ -146,12 +146,12 @@ export default class FullCalendarPlugin extends Plugin {
                 this.app.workspace.detachLeavesOfType(
                     FULL_CALENDAR_SIDEBAR_VIEW_TYPE
                 );
-                new Notice("Full Calendar has been reset.");
+                new Notice("Ferry Calendar has been reset.");
             },
         });
 
         this.addCommand({
-            id: "full-calendar-revalidate",
+            id: "ferry-calendar-revalidate",
             name: "Revalidate remote calendars",
             callback: () => {
                 this.cache.revalidateRemoteCalendars(true);
@@ -159,7 +159,7 @@ export default class FullCalendarPlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "full-calendar-open",
+            id: "ferry-calendar-open",
             name: "Open Calendar",
             callback: () => {
                 this.activateView();
@@ -167,7 +167,7 @@ export default class FullCalendarPlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "full-calendar-open-sidebar",
+            id: "ferry-calendar-open-sidebar",
             name: "Open in sidebar",
             callback: () => {
                 if (
@@ -184,7 +184,7 @@ export default class FullCalendarPlugin extends Plugin {
         });
 
         (this.app.workspace as any).registerHoverLinkSource(PLUGIN_SLUG, {
-            display: "Full Calendar",
+            display: "Ferry Calendar",
             defaultMod: true,
         });
     }

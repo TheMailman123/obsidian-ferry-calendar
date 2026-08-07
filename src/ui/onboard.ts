@@ -17,7 +17,7 @@ export function renderOnboarding(
     const notice = nocal.createDiv();
     notice.createEl("h1").textContent = "No calendar available";
     notice.createEl("p").textContent =
-        "Thanks for downloading Full Calendar! Create a calendar below to begin.";
+        "Thanks for downloading Ferry Calendar! Create a calendar below to begin.";
 
     const container = notice.createDiv();
     container.style.position = "fixed";
