@@ -216,7 +216,9 @@ export default class EventStore {
             const { file, lineNumber } = location;
             console.debug("adding event in file:", file.path);
             this.pathIndex.add(new Path(file), new EventID(id));
-            if (lineNumber) {
+            // Explicit undefined check: line 0 is a valid location, and a
+            // truthiness test would silently discard it.
+            if (lineNumber !== undefined) {
                 this.lineNumbers.set(id, lineNumber);
             }
         }

@@ -134,6 +134,30 @@ describe.each([true, false])(
             expect(0).toBe(store.fileCount);
         });
 
+        it(`preserves a line number of zero`, () => {
+            // Line 0 is falsy. A truthiness check when storing it silently
+            // drops the location, so an event on the first line of a file
+            // reads back with no line number at all. The random line numbers
+            // used elsewhere in this suite only surface this about 1% of the
+            // time, so pin it explicitly.
+            const calendar = mockCalendar();
+            const event = mockEvent();
+            const id = mockId();
+            const location = { file: mockFile(), lineNumber: 0 };
+
+            store.add({ calendar, location, id, event });
+
+            expect(store.getEventsInCalendar(calendar)).toEqual([
+                {
+                    event,
+                    id,
+                    location: pathLoc(location),
+                    calendarId: calendar.id,
+                },
+            ]);
+            expect(store.getEventDetails(id)?.location?.lineNumber).toBe(0);
+        });
+
         it(`gets events in new calendar`, () => {
             const calendar = mockCalendar();
             expect(store.getEventsInCalendar(calendar)).toEqual([]);
@@ -394,9 +418,6 @@ describe.each([true, false])(
                 },
             ]);
 
-            // TODO: There appears to be a race condition or some other kind of nondeterminism here.
-            // When lineNumbers=true, id13/file12 sometime has a lineNumber of undefined rather than 0.
-            // Try to run this test a bunch and figure out what the issue is.
             expect(store.getEventsInCalendar(calendar2)).toEqual([
                 {
                     event: event2,
