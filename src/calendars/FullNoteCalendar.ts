@@ -239,6 +239,13 @@ export default class FullNoteCalendar extends EditableCalendar {
             );
         }
 
+        // Every file in a vault sits inside a folder, so a null parent means
+        // the file has been detached and the caller is working from stale
+        // state. Fail rather than writing the renamed note to the vault root.
+        if (!file.parent) {
+            throw new Error(`File ${path} has no parent folder.`);
+        }
+
         const updatedPath = `${file.parent.path}/${filenameForEvent(event)}`;
         return { file: { path: updatedPath }, lineNumber: undefined };
     }

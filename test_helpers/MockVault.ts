@@ -104,15 +104,19 @@ export class MockVault implements Vault {
         this.contents.set(path, data);
         return file;
     }
-    async createFolder(path: string): Promise<void> {
+    async createFolder(path: string): Promise<TFolder> {
         let folder = new TFolder();
         folder.name = basename(path);
         this.setParent(path, folder);
+        return folder;
     }
     async delete(
         file: TAbstractFile,
         force?: boolean | undefined
     ): Promise<void> {
+        if (!file.parent) {
+            throw new Error(`Cannot delete ${file.path}: it has no parent.`);
+        }
         file.parent.children.remove(file);
     }
     trash(file: TAbstractFile, system: boolean): Promise<void> {
@@ -181,9 +185,45 @@ export class MockVault implements Vault {
         this.contents.set(file.path, data);
     }
 
-    async copy(file: TFile, newPath: string): Promise<TFile> {
+    async copy<T extends TAbstractFile>(file: T, newPath: string): Promise<T> {
+        if (!(file instanceof TFile)) {
+            throw new Error("MockVault can only copy files, not folders.");
+        }
         const data = await this.read(file);
-        return await this.create(newPath, data);
+        return (await this.create(newPath, data)) as unknown as T;
+    }
+
+    getFileByPath(path: string): TFile | null {
+        const file = this.getAbstractFileByPath(path);
+        return file instanceof TFile ? file : null;
+    }
+
+    getFolderByPath(path: string): TFolder | null {
+        const folder = this.getAbstractFileByPath(path);
+        return folder instanceof TFolder ? folder : null;
+    }
+
+    getAllFolders(includeRoot?: boolean): TFolder[] {
+        const folders = collectChildren(this.root).filter(
+            (f): f is TFolder => f instanceof TFolder
+        );
+        return includeRoot ? [this.root, ...folders] : folders;
+    }
+
+    async process(
+        file: TFile,
+        fn: (data: string) => string,
+        options?: DataWriteOptions
+    ): Promise<string> {
+        const result = fn(await this.read(file));
+        await this.modify(file, result);
+        return result;
+    }
+
+    // Deliberately unimplemented: no test needs binary appends, and a silent
+    // no-op would let a test pass while doing nothing.
+    appendBinary(): Promise<void> {
+        throw new Error("appendBinary is not implemented in MockVault.");
     }
 
     // TODO: Implement callbacks.

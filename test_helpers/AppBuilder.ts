@@ -88,9 +88,22 @@ export class MockApp implements App {
     metadataCache: MetadataCache;
     vault: MockVault;
 
+    // Present only to satisfy the App interface; no test exercises them.
+    renderContext: App["renderContext"] = {} as App["renderContext"];
+    secretStorage: App["secretStorage"] = {} as App["secretStorage"];
+    isDarkMode: () => boolean = () => false;
+
     constructor(vault: MockVault, cache: MockCache) {
         this.vault = vault;
         this.metadataCache = cache;
+    }
+
+    loadLocalStorage(key: string): any {
+        throw new Error("loadLocalStorage is not implemented in MockApp.");
+    }
+
+    saveLocalStorage(key: string, data: unknown): void {
+        throw new Error("saveLocalStorage is not implemented in MockApp.");
     }
 }
 

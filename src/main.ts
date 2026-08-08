@@ -177,7 +177,12 @@ export default class FullCalendarPlugin extends Plugin {
                 ) {
                     return;
                 }
-                this.app.workspace.getRightLeaf(false).setViewState({
+                const leaf = this.app.workspace.getRightLeaf(false);
+                if (!leaf) {
+                    new Notice("No right sidebar available to open in.");
+                    return;
+                }
+                leaf.setViewState({
                     type: FULL_CALENDAR_SIDEBAR_VIEW_TYPE,
                 });
             },
