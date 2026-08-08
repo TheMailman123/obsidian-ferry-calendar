@@ -1,7 +1,7 @@
 {
     "name": "ferry-calendar",
     "version": "0.1.0",
-    "description": "Calendar views over your notes, with recurring events and read-only calendars derived from any folder's frontmatter.",
+    "description": "Calendar views over your notes. An in-development fork of Full Calendar.",
     "main": "main.js",
     "scripts": {
         "dev": "node esbuild.config.mjs",

@@ -57,9 +57,11 @@ export class MockVault implements Vault {
         return this.root;
     }
     async read(file: TFile): Promise<string> {
-        const p = join("/", file.path);
+        const p = this.key(file.path);
         const contents = this.contents.get(p);
-        if (!contents) {
+        // An empty file is a valid file; only a genuinely absent entry is an
+        // error. A truthiness check would reject "".
+        if (contents === undefined) {
             throw new Error(`File at path ${p} does not have contents`);
         }
         return contents;
@@ -80,14 +82,26 @@ export class MockVault implements Vault {
         );
     }
 
+    /**
+     * Key used in the contents map.
+     *
+     * The bundled TFile mock derives `path` from its parent chain and strips
+     * the leading slash, while paths passed in by callers keep it. Everything
+     * touching the contents map must normalise through here, or writes land
+     * under a different key than reads look for.
+     */
+    private key(path: string): string {
+        return join("/", path);
+    }
+
     private setParent(path: string, f: TAbstractFile) {
         const parentPath = dirname(path);
         const folder = this.getAbstractFileByPath(parentPath);
-        if (folder instanceof TFolder) {
-            f.parent = folder;
-            folder.children.push(f);
+        if (!(folder instanceof TFolder)) {
+            throw new Error(`Parent path ${parentPath} is not a folder.`);
         }
-        throw new Error("Parent path is not folder.");
+        f.parent = folder;
+        folder.children.push(f);
     }
 
     async create(
@@ -101,7 +115,7 @@ export class MockVault implements Vault {
         let file = new TFile();
         file.name = basename(path);
         this.setParent(path, file);
-        this.contents.set(path, data);
+        this.contents.set(this.key(path), data);
         return file;
     }
     async createFolder(path: string): Promise<TFolder> {
@@ -133,18 +147,18 @@ export class MockVault implements Vault {
         if (file instanceof TFile) {
             // If we're renaming a file, just update the parent and name in the
             // file, and the entry in the content map.
-            const contents = this.contents.get(file.path);
-            if (!contents) {
+            const contents = this.contents.get(this.key(file.path));
+            if (contents === undefined) {
                 throw new Error(`File did not have contents: ${file.path}`);
             }
-            this.contents.delete(file.path);
+            this.contents.delete(this.key(file.path));
 
             // Update the parent and name and re-set contents with the new path.
             // NOTE: This relies on using the included mock that derives the path
             // from the parent and filename as a getter property.
             file.parent = newParent;
             file.name = basename(newPath);
-            this.contents.set(file.path, contents);
+            this.contents.set(this.key(file.path), contents);
         } else if (file instanceof TFolder) {
             // If we're renaming a folder, we need to update the content map for
             // every TFile under this folder.
@@ -154,13 +168,13 @@ export class MockVault implements Vault {
             const filesAndContents = collectChildren(file)
                 .flatMap((f) => (f instanceof TFile ? f : []))
                 .map((f): [TFile, string] => {
-                    const contents = this.contents.get(f.path);
-                    if (!contents) {
+                    const contents = this.contents.get(this.key(f.path));
+                    if (contents === undefined) {
                         throw new Error(
                             `File did not have contents: ${f.path}`
                         );
                     }
-                    this.contents.delete(f.path);
+                    this.contents.delete(this.key(f.path));
                     return [f, contents];
                 });
 
@@ -170,7 +184,7 @@ export class MockVault implements Vault {
 
             // Re-add all the paths to the content dir.
             for (const [f, contents] of filesAndContents) {
-                this.contents.set(f.path, contents);
+                this.contents.set(this.key(f.path), contents);
             }
         } else {
             throw new Error(`File is not a file or folder: ${file.path}`);
@@ -182,7 +196,7 @@ export class MockVault implements Vault {
         data: string,
         options?: DataWriteOptions | undefined
     ): Promise<void> {
-        this.contents.set(file.path, data);
+        this.contents.set(this.key(file.path), data);
     }
 
     async copy<T extends TAbstractFile>(file: T, newPath: string): Promise<T> {

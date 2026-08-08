@@ -330,7 +330,9 @@ export default class DailyNoteCalendar extends EditableCalendar {
         if (!file) {
             throw new Error(`File not found at path: ${path}`);
         }
-        if (!lineNumber) {
+        // Line 0 is a valid location, so check for absence rather than
+        // truthiness - matching how EventStore now records line numbers.
+        if (lineNumber === undefined) {
             throw new Error(`Daily note events must have a line number.`);
         }
         return { file, lineNumber };

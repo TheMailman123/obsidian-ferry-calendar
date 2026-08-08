@@ -14,7 +14,14 @@
  * silently deploying a stale plugin.
  */
 
-import { existsSync, mkdirSync, copyFileSync, readFileSync } from "fs";
+import {
+    existsSync,
+    mkdirSync,
+    copyFileSync,
+    readFileSync,
+    readdirSync,
+    statSync,
+} from "fs";
 import { join, resolve } from "path";
 
 const PLUGIN_ID = JSON.parse(readFileSync("manifest.json", "utf8")).id;
@@ -52,6 +59,33 @@ for (const [src, dest] of artefacts) {
     if (!existsSync(src)) {
         throw new Error(`Missing build artefact '${src}'. Run 'npm run build' first.`);
     }
+}
+
+/** Most recent mtime of any file under a directory, in ms. */
+function newestMtime(dir) {
+    let newest = 0;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        const mtime = entry.isDirectory()
+            ? newestMtime(full)
+            : statSync(full).mtimeMs;
+        if (mtime > newest) newest = mtime;
+    }
+    return newest;
+}
+
+// `npm run deploy` is usable on its own, so an artefact older than the sources
+// means the developer is about to test code they did not build. Refuse rather
+// than reporting a successful deploy of a stale bundle.
+const newestSource = newestMtime("src");
+const builtAt = statSync("main.js").mtimeMs;
+if (builtAt < newestSource) {
+    throw new Error(
+        "main.js is older than files in src/. Run 'npm run build' (or use 'npm run build:deploy')."
+    );
+}
+
+for (const [src, dest] of artefacts) {
     copyFileSync(src, join(target, dest));
 }
 
