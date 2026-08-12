@@ -7,21 +7,57 @@ A fork of [Full Calendar](https://github.com/davish/obsidian-full-calendar) by
 
 ## Status
 
-**Early development, and currently at feature parity with upstream.** So far this fork differs only in
-its build toolchain and a bug fix; if you want a working calendar plugin today, install Full Calendar
-instead. There is nothing here yet that it does not already do.
+**Early development.** Everything upstream does, plus the two features below. Still unreleased and not
+in the community plugin list.
 
-The fork exists to build the following, none of which is implemented:
+Still to come:
 
 - **Recurring events** — RFC 5545 recurrence rules, with per-instance edits and deletes
   ("this event / this and following / all events"). Upstream supports only a fixed set of weekdays.
-- **Derived calendars** — render any folder of notes on the calendar by describing how its frontmatter
-  maps to events, read-only, so the source notes are never modified.
-- **Calendar toggling** — show and hide calendars from the calendar view.
 
-This list will move up into a features section as each part lands. Not in the community plugin list.
+## Features beyond upstream
 
-### Changes so far
+### Calendar toggling
+
+A key above the calendar with one row per calendar. Uncheck one to hide its events; the choice persists.
+
+### Derived calendars
+
+Point the plugin at any folder of notes and describe how their frontmatter becomes events. Notes that
+exist for their own reasons — records that happen to carry dates — show up on the calendar without
+being rewritten into events first.
+
+**Derived calendars are read-only, structurally.** No create, no delete, no drag, no resize, and no
+write path to the source notes at all. Clicking an event opens the note it came from; ctrl/cmd-click
+opens it in a split. A note is a record that has dates on it, and "reschedule" is not a meaningful
+thing to do to one.
+
+Add one from Settings → *Manage Calendars* → **Custom directory (read-only)**. Before saving, the form
+shows what the mapping would produce — how many notes matched, how many were skipped, and why — so a
+mapping that quietly matches nothing is visible immediately rather than after the fact.
+
+The mapping fields:
+
+| Field | Meaning |
+|---|---|
+| Title | Template: `{{file.basename}}`, `{{file.path}}`, `{{property:NAME}}` |
+| Start date property | Frontmatter property holding the date. May carry a time |
+| End date property | Optional. The record's last day — inclusive, as written in the note |
+| All-day | Always, never, or read per note from a property |
+| Start/end time property | Optional, when the time is separate from the date |
+| Repeat | None, yearly, monthly, or a raw RRULE. Computed at render, never written |
+| Date format | `iso`, or a format like `dd/MM/yyyy` for non-ISO sources |
+| Skip notes with no date | On skips them quietly; off reports them |
+| Filter | Optional. Include only notes where a property is set, unset, or (not) equal to a value |
+
+A property that is empty or `null` counts as absent either way — `DATE:` with nothing after it is not a
+date. One folder can carry several mappings: add it twice with different names, and each gets its own
+colour and its own row in the calendar key.
+
+Parsing is tolerant but not silent. A value the mapping cannot read is reported with its reason rather
+than dropped, both in the preview and when the calendar loads.
+
+### Other changes
 
 - Modernised toolchain: TypeScript 5.9, esbuild 0.28, Obsidian 1.x API types.
 - Fixed an event on line 0 of a file losing its line number.
