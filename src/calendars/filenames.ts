@@ -27,10 +27,12 @@ import { FerryEvent } from "../types";
  * Subdirectory of a working calendar holding recurring masters.
  *
  * The leading underscore sorts it above the dated notes in the file explorer.
- * Nothing parses masters yet — see the recurrence slice — but the name is
- * defined here so the one place that must already know about the directory
- * (calendar membership, so a master is not mistaken for an ordinary event)
- * does not hardcode a string.
+ *
+ * Nothing parses masters yet — that arrives with the recurrence engine — and
+ * nothing here needs to name the directory, because a working calendar only
+ * ever reads its immediate children and so skips every subfolder alike. The
+ * constant exists so the convention has one spelling, and is pinned by the
+ * calendar-membership test that asserts a master stays unparsed.
  */
 export const RECURRING_DIR = "_recurring";
 

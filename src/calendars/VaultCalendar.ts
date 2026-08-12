@@ -25,9 +25,21 @@ export abstract class VaultCalendar extends Calendar {
 
     /**
      * Returns true if this calendar sources events from the given path.
+     *
+     * The trailing separator is load-bearing: a bare `startsWith` on the
+     * directory makes a calendar at `CALENDARS/WORK` claim every note under
+     * `CALENDARS/WORK2`, and the two calendars would then fight over the same
+     * files whenever one of them changed.
+     *
+     * Subclasses that read only part of their directory tree narrow this
+     * further; nothing may widen it.
      */
     containsPath(path: string): boolean {
-        return path.startsWith(this.directory);
+        if (this.directory === "") {
+            // A calendar rooted at the vault root contains everything.
+            return true;
+        }
+        return path.startsWith(`${this.directory}/`);
     }
 
     /**

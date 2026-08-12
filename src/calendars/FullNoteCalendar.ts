@@ -161,6 +161,31 @@ export default class FullNoteCalendar extends EditableCalendar {
     }
 
     /**
+     * Working-calendar notes live directly in the calendar's own folder.
+     *
+     * Narrower than the base implementation on purpose, and it has to be:
+     * `getEvents` reads only the folder's immediate children, so without this a
+     * note in a subfolder would be invisible on load but parsed as an ordinary
+     * event the moment it was edited — present on the calendar or not depending
+     * on which code path last ran.
+     *
+     * The subfolder that matters today is `_recurring/`. Masters stored there
+     * are not ordinary events and nothing parses them until the recurrence
+     * slice lands; treating one as a single event because it happens to carry a
+     * date would put a phantom on the calendar.
+     */
+    containsPath(path: string): boolean {
+        if (!super.containsPath(path)) {
+            return false;
+        }
+        const relative =
+            this.directory === ""
+                ? path
+                : path.slice(this.directory.length + 1);
+        return !relative.includes("/");
+    }
+
+    /**
      * Whether a basename is already used by a note in the given folder.
      *
      * @param folder Folder to check within.

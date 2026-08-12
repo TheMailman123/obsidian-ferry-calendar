@@ -7,6 +7,7 @@ import { FileBuilder } from "../../test_helpers/FileBuilder";
 import { FerryEvent } from "src/types";
 import FullNoteCalendar from "./FullNoteCalendar";
 import { parseEvent } from "../types/schema";
+import { RECURRING_DIR } from "./filenames";
 
 const makeApp = (app: MockApp): ObsidianInterface => ({
     getAbstractFileByPath: (path) => app.vault.getAbstractFileByPath(path),
@@ -148,6 +149,45 @@ describe("Note Calendar Tests", () => {
         }
     );
     it.todo("Recursive folder settings");
+
+    describe("containsPath", () => {
+        const calendar = new FullNoteCalendar(
+            makeApp(MockAppBuilder.make().done()),
+            color,
+            "CALENDARS/WORK"
+        );
+
+        it("claims notes directly in its own folder", () => {
+            expect(calendar.containsPath("CALENDARS/WORK/20220101_x.md")).toBe(
+                true
+            );
+        });
+
+        it("does not claim a sibling folder sharing its prefix", () => {
+            // A bare startsWith made WORK claim every note under WORK2, and the
+            // two calendars would then fight over the same files.
+            expect(calendar.containsPath("CALENDARS/WORK2/20220101_x.md")).toBe(
+                false
+            );
+        });
+
+        it("does not claim recurring masters", () => {
+            // getEvents() reads only immediate children, so a master parsed
+            // here would appear on the calendar only after being edited.
+            expect(
+                calendar.containsPath(
+                    `CALENDARS/WORK/${RECURRING_DIR}/20260317_Gym.md`
+                )
+            ).toBe(false);
+        });
+
+        it("does not claim notes outside it", () => {
+            expect(calendar.containsPath("CALENDARS/20220101_x.md")).toBe(
+                false
+            );
+            expect(calendar.containsPath("PEOPLE/someone.md")).toBe(false);
+        });
+    });
 
     it("creates an event", async () => {
         const obsidian = makeApp(MockAppBuilder.make().done());
