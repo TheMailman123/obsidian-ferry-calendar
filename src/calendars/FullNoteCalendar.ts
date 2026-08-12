@@ -10,6 +10,12 @@ import {
     disambiguate,
     FilenameDateFormat,
 } from "./filenames";
+import {
+    CalendarRepairPlan,
+    PlannableNote,
+    PlannedRename,
+    planRepairs,
+} from "./filename_repair";
 
 const FRONTMATTER_SEPARATOR = "---";
 
@@ -288,6 +294,72 @@ export default class FullNoteCalendar extends EditableCalendar {
      * that is already taken picks up a `_2`, `_3` suffix rather than refusing
      * the create.
      */
+    /**
+     * Work out which of this calendar's notes have filenames that disagree
+     * with their frontmatter.
+     *
+     * Reads only, and only the notes `getEvents` would read. Nothing here
+     * renames anything: the caller decides whether to report the plan or apply
+     * it.
+     */
+    async planFilenameRepair(): Promise<CalendarRepairPlan> {
+        const eventFolder = this.app.getAbstractFileByPath(this.directory);
+        if (!eventFolder) {
+            throw new Error(`Cannot get folder ${this.directory}`);
+        }
+        if (!(eventFolder instanceof TFolder)) {
+            throw new Error(`${eventFolder} is not a directory.`);
+        }
+        const notes: PlannableNote[] = [];
+        for (const file of eventFolder.children) {
+            if (!(file instanceof TFile)) {
+                continue;
+            }
+            notes.push({
+                path: file.path,
+                basename: file.basename,
+                event: validateEvent(this.app.getMetadata(file)?.frontmatter),
+            });
+        }
+        return planRepairs(this.directory, notes, this.dateFormat);
+    }
+
+    /**
+     * Perform the renames in a plan.
+     *
+     * Renames go through the adapter's `rename`, which is Obsidian's
+     * `fileManager.renameFile`, so inbound `[[wikilinks]]` are rewritten as
+     * each note moves. Renaming these files any other way would break links
+     * silently, which is the failure this whole slice is trying to avoid.
+     *
+     * Each rename is re-checked against the vault immediately before it runs.
+     * A plan is shown to the user and then applied on their say-so, and the
+     * vault may have moved underneath it in between.
+     *
+     * @returns The renames that were actually performed.
+     */
+    async applyFilenameRepair(
+        plan: CalendarRepairPlan
+    ): Promise<PlannedRename[]> {
+        const applied: PlannedRename[] = [];
+        for (const rename of plan.renames) {
+            const file = this.app.getFileByPath(rename.from);
+            if (!file) {
+                throw new Error(
+                    `Cannot rename ${rename.from}: it no longer exists. Re-run the repair to plan against the vault as it is now.`
+                );
+            }
+            if (this.app.getAbstractFileByPath(rename.to)) {
+                throw new Error(
+                    `Cannot rename ${rename.from} to ${rename.to}: something is already there. Re-run the repair to plan against the vault as it is now.`
+                );
+            }
+            await this.app.rename(file, rename.to);
+            applied.push(rename);
+        }
+        return applied;
+    }
+
     async createEvent(event: FerryEvent): Promise<EventLocation> {
         const basename = this.freeBasenameFor(this.directory, event);
         const path = `${this.directory}/${basename}.md`;
