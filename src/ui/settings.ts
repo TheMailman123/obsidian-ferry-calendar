@@ -20,6 +20,13 @@ import {
     listPropertiesInDirectory,
     previewDerivedSource,
 } from "src/calendars/derived_preview";
+import {
+    DEFAULT_FILENAME_DATE_FORMAT,
+    FILENAME_DATE_FORMAT_LABELS,
+    FILENAME_DATE_FORMATS,
+    FilenameDateFormat,
+    isFilenameDateFormat,
+} from "src/calendars/filenames";
 
 export interface FerryCalendarSettings {
     calendarSources: CalendarInfo[];
@@ -40,6 +47,14 @@ export interface FerryCalendarSettings {
     hiddenCalendars: string[];
     /** Whether the calendar key starts collapsed. */
     calendarKeyCollapsed: boolean;
+    /**
+     * How the date prefix of a working-calendar event filename is rendered.
+     *
+     * Changing this does not rename anything by itself: every existing note
+     * simply starts disagreeing with its frontmatter, and the repair command
+     * shows what it would do before it does it.
+     */
+    filenameDateFormat: FilenameDateFormat;
 }
 
 export const DEFAULT_SETTINGS: FerryCalendarSettings = {
@@ -54,6 +69,7 @@ export const DEFAULT_SETTINGS: FerryCalendarSettings = {
     clickToCreateEventFromMonthView: true,
     hiddenCalendars: [],
     calendarKeyCollapsed: false,
+    filenameDateFormat: DEFAULT_FILENAME_DATE_FORMAT,
 };
 
 const WEEKDAYS = [
@@ -253,6 +269,35 @@ export class FerryCalendarSettingTab extends PluginSettingTab {
                 toggle.onChange(async (val) => {
                     this.plugin.settings.timeFormat24h = val;
                     await this.plugin.saveSettings();
+                });
+            });
+
+        new Setting(containerEl)
+            .setName("Event filename date format")
+            .setDesc(
+                "How the date is written at the start of event note filenames. " +
+                    "Changing this does not rename existing notes: run " +
+                    '"Repair event filenames" to see and approve the renames.'
+            )
+            .addDropdown((dropdown) => {
+                FILENAME_DATE_FORMATS.forEach((format) => {
+                    dropdown.addOption(
+                        format,
+                        FILENAME_DATE_FORMAT_LABELS[format]
+                    );
+                });
+                dropdown.setValue(this.plugin.settings.filenameDateFormat);
+                dropdown.onChange(async (value) => {
+                    if (!isFilenameDateFormat(value)) {
+                        throw new Error(
+                            `Unknown filename date format ${value}.`
+                        );
+                    }
+                    this.plugin.settings.filenameDateFormat = value;
+                    // saveSettings rather than savePreferences: the calendars
+                    // hold the format, so they have to be rebuilt with it.
+                    await this.plugin.saveSettings();
+                    await this.plugin.reportFilenameDrift();
                 });
             });
 

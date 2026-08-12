@@ -20,6 +20,13 @@ import DailyNoteCalendar from "./calendars/DailyNoteCalendar";
 import DerivedCalendar from "./calendars/DerivedCalendar";
 import ICSCalendar from "./calendars/ICSCalendar";
 import CalDAVCalendar from "./calendars/CalDAVCalendar";
+import {
+    CalendarRepairPlan,
+    countRenames,
+    countUnplannable,
+    describePlan,
+} from "./calendars/filename_repair";
+import { FilenameRepairModal } from "./ui/repair_modal";
 
 export default class FerryCalendarPlugin extends Plugin {
     settings: FerryCalendarSettings = DEFAULT_SETTINGS;
@@ -29,7 +36,8 @@ export default class FerryCalendarPlugin extends Plugin {
                 ? new FullNoteCalendar(
                       new ObsidianIO(this.app),
                       info.color,
-                      info.directory
+                      info.directory,
+                      this.settings.filenameDateFormat
                   )
                 : null,
         dailynote: (info) =>
@@ -163,6 +171,14 @@ export default class FerryCalendarPlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "ferry-calendar-repair-filenames",
+            name: "Repair event filenames",
+            callback: () => {
+                this.repairFilenames();
+            },
+        });
+
+        this.addCommand({
             id: "ferry-calendar-revalidate",
             name: "Revalidate remote calendars",
             callback: () => {
@@ -204,6 +220,135 @@ export default class FerryCalendarPlugin extends Plugin {
             display: "Ferry Calendar",
             defaultMod: true,
         });
+
+        // Deferred until the layout is ready because the check reads parsed
+        // frontmatter. Run at onload time the metadata cache may still be
+        // filling, and every note would look like it was not an event.
+        this.app.workspace.onLayoutReady(() => {
+            this.reportFilenameDrift().catch((e) =>
+                console.error("Could not check event filenames", e)
+            );
+        });
+    }
+
+    /**
+     * Plan the filename repair across every working calendar.
+     *
+     * Read-only. Derived calendars are absent by construction: the plugin
+     * writes nothing to the notes behind them, and renaming someone's source
+     * note to suit a projection would be exactly the write authority a derived
+     * calendar is defined not to have.
+     */
+    private async planFilenameRepairs(): Promise<CalendarRepairPlan[]> {
+        const calendars = [...this.cache.calendars.values()].flatMap((c) =>
+            c instanceof FullNoteCalendar ? c : []
+        );
+        return Promise.all(calendars.map((c) => c.planFilenameRepair()));
+    }
+
+    /**
+     * Report — but do not fix — event notes whose filenames disagree with
+     * their frontmatter.
+     *
+     * Frontmatter is authoritative, so a disagreement is always the filename's
+     * fault and the fix is never ambiguous. It still is not applied here.
+     * Loading a plugin should not rewrite the names of notes in a vault; the
+     * user gets told what is wrong and runs the repair when they choose to.
+     */
+    async reportFilenameDrift(): Promise<void> {
+        const plans = await this.planFilenameRepairs();
+        const renames = countRenames(plans);
+        const unplannable = countUnplannable(plans);
+        if (renames === 0 && unplannable === 0) {
+            return;
+        }
+
+        // Every case listed in the console, not just the count: a summary is
+        // not enough to work out which note is wrong or why.
+        console.warn(
+            [
+                "Ferry Calendar: event filenames need repair",
+                ...describePlan(plans),
+            ].join("\n")
+        );
+
+        const parts: string[] = [];
+        if (renames > 0) {
+            parts.push(
+                `${renames} event note${renames === 1 ? "" : "s"} disagree${
+                    renames === 1 ? "s" : ""
+                } with its frontmatter`
+            );
+        }
+        if (unplannable > 0) {
+            parts.push(`${unplannable} could not be named at all`);
+        }
+        new Notice(
+            `Ferry Calendar: ${parts.join(
+                ", "
+            )}. Run "Repair event filenames" to review the fix.`,
+            10000
+        );
+    }
+
+    /**
+     * Show the repair plan, and rename only if the user approves it.
+     *
+     * The dry run is not a separate command that can be skipped: the plan is
+     * always computed and shown first, and the renames happen behind a button
+     * in the modal. Safe to run repeatedly — a plan against notes that already
+     * agree with their frontmatter is empty.
+     */
+    private async repairFilenames(): Promise<void> {
+        const plans = await this.planFilenameRepairs();
+        const renames = countRenames(plans);
+        const unplannable = countUnplannable(plans);
+        const lines = describePlan(plans);
+
+        console.warn(
+            ["Ferry Calendar: filename repair plan", ...lines].join("\n")
+        );
+
+        const summary =
+            renames > 0
+                ? `${renames} note(s) will be renamed. Frontmatter is not touched, and inbound links are updated automatically.`
+                : unplannable === 0
+                ? "Every event filename already agrees with its frontmatter. Nothing to do."
+                : `No filenames need repair, but ${unplannable} note(s) could not be named. See below.`;
+
+        new FilenameRepairModal(this.app, summary, lines, renames, async () => {
+            const calendars = new Map(
+                [...this.cache.calendars.values()].flatMap((c) =>
+                    c instanceof FullNoteCalendar
+                        ? [[c.directory, c] as const]
+                        : []
+                )
+            );
+            let applied = 0;
+            for (const plan of plans) {
+                const calendar = calendars.get(plan.directory);
+                if (!calendar) {
+                    throw new Error(
+                        `Calendar for ${plan.directory} is no longer registered.`
+                    );
+                }
+                applied += (await calendar.applyFilenameRepair(plan)).length;
+            }
+
+            // A rename fires vault.on("rename"), which drops the events at
+            // the old path, but no metadata change follows to add them back
+            // at the new one. Rebuild rather than leave the view short of
+            // every note that just moved.
+            this.cache.reset(this.settings.calendarSources);
+            await this.cache.populate();
+            this.cache.resync();
+
+            new Notice(
+                `Ferry Calendar: renamed ${applied} event note${
+                    applied === 1 ? "" : "s"
+                }.`
+            );
+        }).open();
     }
 
     onunload() {
