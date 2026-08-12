@@ -27,6 +27,15 @@ export interface FerryCalendarSettings {
     };
     timeFormat24h: boolean;
     clickToCreateEventFromMonthView: boolean;
+    /**
+     * Calendar ids whose events are hidden from the view, toggled from the
+     * calendar key. Absence means visible, so an id that disappears — because
+     * its calendar was renamed or removed — fails safe to a visible calendar
+     * rather than one hidden with no row left to unhide it.
+     */
+    hiddenCalendars: string[];
+    /** Whether the calendar key starts collapsed. */
+    calendarKeyCollapsed: boolean;
 }
 
 export const DEFAULT_SETTINGS: FerryCalendarSettings = {
@@ -39,6 +48,8 @@ export const DEFAULT_SETTINGS: FerryCalendarSettings = {
     },
     timeFormat24h: false,
     clickToCreateEventFromMonthView: true,
+    hiddenCalendars: [],
+    calendarKeyCollapsed: false,
 };
 
 const WEEKDAYS = [

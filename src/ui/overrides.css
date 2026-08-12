@@ -80,3 +80,54 @@
 	border-color: black !important;
 	border-width: 1px !important;
 }
+
+/* Calendar key: collapsible list of calendars with visibility checkboxes. */
+
+.ferry-key-container {
+	flex-shrink: 0;
+}
+
+.ferry-key {
+	margin-bottom: var(--size-4-2, 8px);
+	font-size: var(--font-ui-smaller);
+}
+
+.ferry-key-summary {
+	cursor: pointer;
+	color: var(--text-muted);
+	list-style-position: inside;
+}
+
+.ferry-key-summary:hover {
+	color: var(--text-normal);
+}
+
+.ferry-key-rows {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-1, 4px) var(--size-4-3, 12px);
+	padding: var(--size-4-2, 8px) 0 var(--size-4-1, 4px);
+}
+
+.ferry-key-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1, 4px);
+	cursor: pointer;
+}
+
+.ferry-key-swatch {
+	width: 0.75em;
+	height: 0.75em;
+	border-radius: 3px;
+	flex-shrink: 0;
+}
+
+/* A hidden calendar's row dims, so "off" reads at a glance. */
+.ferry-key-row:has(.ferry-key-checkbox:not(:checked)) .ferry-key-swatch {
+	opacity: 0.25;
+}
+
+.ferry-key-row:has(.ferry-key-checkbox:not(:checked)) .ferry-key-label {
+	color: var(--text-faint);
+}

@@ -13,7 +13,13 @@ import { renderOnboarding } from "./onboard";
 import { openFileForEvent } from "./actions";
 import { launchCreateModal, launchEditModal } from "./event_modal";
 import { isTask, toggleTask, unmakeTask } from "src/ui/tasks";
-import { UpdateViewCallback } from "src/core/EventCache";
+import { FerryEventSource, UpdateViewCallback } from "src/core/EventCache";
+import {
+    isCalendarVisible,
+    pruneHiddenCalendars,
+    renderCalendarKey,
+    setCalendarVisibility,
+} from "./calendar_key";
 
 export const FERRY_CALENDAR_VIEW_TYPE = "ferry-calendar-view";
 export const FERRY_CALENDAR_SIDEBAR_VIEW_TYPE = "ferry-calendar-sidebar-view";
@@ -80,16 +86,125 @@ export class CalendarView extends ItemView {
         return this.inSidebar ? "Ferry Calendar" : "Calendar";
     }
 
-    translateSources() {
-        return this.plugin.cache.getAllEvents().map(
-            ({ events, editable, color, id }): EventSourceInput => ({
+    private translateSource({
+        events,
+        editable,
+        color,
+        id,
+    }: FerryEventSource): EventSourceInput {
+        return {
+            id,
+            events: events.flatMap((e) => toEventInput(e.id, e.event) || []),
+            editable,
+            ...getCalendarColors(color),
+        };
+    }
+
+    /**
+     * Every event source the calendar should currently be showing.
+     *
+     * Hidden calendars are filtered out *here* rather than at the point of
+     * rendering, because this is what the resync handler rebuilds from. Layering
+     * visibility on top of it instead would let any remote revalidation quietly
+     * bring hidden calendars back.
+     */
+    translateSources(): EventSourceInput[] {
+        const { hiddenCalendars } = this.plugin.settings;
+        return this.plugin.cache
+            .getAllEvents()
+            .filter((source) => isCalendarVisible(hiddenCalendars, source.id))
+            .map((source) => this.translateSource(source));
+    }
+
+    private isVisible(calendarId: string): boolean {
+        return isCalendarVisible(
+            this.plugin.settings.hiddenCalendars,
+            calendarId
+        );
+    }
+
+    /**
+     * Add or remove a single calendar's event source in place.
+     *
+     * Toggling one source avoids the full teardown that `removeAllEventSources`
+     * would cause, which visibly flickers every other calendar on screen.
+     */
+    private applyVisibility(calendarId: string, visible: boolean): void {
+        const view = this.fullCalendarView;
+        if (!view) {
+            return;
+        }
+
+        if (!visible) {
+            view.getEventSourceById(calendarId)?.remove();
+            return;
+        }
+
+        if (view.getEventSourceById(calendarId)) {
+            return;
+        }
+
+        const source = this.plugin.cache
+            .getAllEvents()
+            .find((s) => s.id === calendarId);
+        if (!source) {
+            throw new Error(
+                `Cannot show calendar '${calendarId}': it is not registered in the cache.`
+            );
+        }
+        view.addEventSource(this.translateSource(source));
+    }
+
+    /** Persist a toggle and reflect it in the calendar. */
+    private async toggleCalendar(
+        calendarId: string,
+        visible: boolean
+    ): Promise<void> {
+        this.plugin.settings.hiddenCalendars = setCalendarVisibility(
+            this.plugin.settings.hiddenCalendars,
+            calendarId,
+            visible
+        );
+        // Deliberately not saveSettings(): that resets and repopulates the
+        // whole cache, and its resync would rebuild every source.
+        await this.plugin.savePreferences();
+        this.applyVisibility(calendarId, visible);
+    }
+
+    /**
+     * Draw the key, first discarding hidden ids with no matching calendar.
+     *
+     * Editing a calendar in settings changes its id, so without pruning here the
+     * stale entries would pile up in data.json indefinitely.
+     */
+    private async renderKey(parent: HTMLElement): Promise<void> {
+        const sources = this.plugin.cache.getAllEvents();
+        const pruned = pruneHiddenCalendars(
+            this.plugin.settings.hiddenCalendars,
+            sources.map((s) => s.id)
+        );
+        if (pruned.length !== this.plugin.settings.hiddenCalendars.length) {
+            this.plugin.settings.hiddenCalendars = pruned;
+            await this.plugin.savePreferences();
+        }
+
+        renderCalendarKey(
+            parent,
+            sources.map(({ id, name, type, color }) => ({
                 id,
-                events: events.flatMap(
-                    (e) => toEventInput(e.id, e.event) || []
-                ),
-                editable,
-                ...getCalendarColors(color),
-            })
+                name,
+                type,
+                color: getCalendarColors(color).color,
+            })),
+            this.plugin.settings.hiddenCalendars,
+            this.plugin.settings.calendarKeyCollapsed,
+            {
+                onToggle: (id, visible) => this.toggleCalendar(id, visible),
+                onCollapse: async (collapsed) => {
+                    this.plugin.settings.calendarKeyCollapsed = collapsed;
+                    await this.plugin.savePreferences();
+                },
+            }
         );
     }
 
@@ -105,16 +220,20 @@ export class CalendarView extends ItemView {
 
         const container = this.containerEl.children[1];
         container.empty();
-        let calendarEl = container.createEl("div");
 
         if (
             this.plugin.settings.calendarSources.filter(
                 (s) => s.type !== "FOR_TEST_ONLY"
             ).length === 0
         ) {
-            renderOnboarding(this.app, this.plugin, calendarEl);
+            renderOnboarding(this.app, this.plugin, container.createEl("div"));
             return;
         }
+
+        // Created before the calendar so the key sits above it. Populated once
+        // the calendar exists, since toggling a row acts on it.
+        const keyEl = container.createDiv({ cls: "ferry-key-container" });
+        let calendarEl = container.createEl("div");
 
         const sources: EventSourceInput[] = this.translateSources();
 
@@ -298,6 +417,8 @@ export class CalendarView extends ItemView {
         // @ts-ignore
         window.fc = this.fullCalendarView;
 
+        await this.renderKey(keyEl);
+
         this.registerDomEvent(this.containerEl, "mouseenter", () => {
             this.plugin.cache.revalidateRemoteCalendars();
         });
@@ -332,6 +453,10 @@ export class CalendarView extends ItemView {
                     }
                 });
                 toAdd.forEach(({ id, event, calendarId }) => {
+                    // A hidden calendar has no event source to attach to.
+                    if (!this.isVisible(calendarId)) {
+                        return;
+                    }
                     const eventInput = toEventInput(id, event);
                     console.debug("adding event", {
                         id,
@@ -346,19 +471,18 @@ export class CalendarView extends ItemView {
                     console.debug("event that was added", addedEvent);
                 });
             } else if (payload.type == "calendar") {
-                const {
-                    calendar: { id, events, editable, color },
-                } = payload;
-                console.debug("replacing calendar with id", payload.calendar);
-                this.fullCalendarView?.getEventSourceById(id)?.remove();
-                this.fullCalendarView?.addEventSource({
-                    id,
-                    events: events.flatMap(
-                        ({ id, event }) => toEventInput(id, event) || []
-                    ),
-                    editable,
-                    ...getCalendarColors(color),
-                });
+                const { calendar } = payload;
+                console.debug("replacing calendar with id", calendar);
+                this.fullCalendarView
+                    ?.getEventSourceById(calendar.id)
+                    ?.remove();
+                // Re-adding a hidden calendar here would undo the toggle: this
+                // fires whenever a remote calendar revalidates.
+                if (this.isVisible(calendar.id)) {
+                    this.fullCalendarView?.addEventSource(
+                        this.translateSource(calendar)
+                    );
+                }
             }
         });
     }

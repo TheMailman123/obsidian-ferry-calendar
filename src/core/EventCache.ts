@@ -67,6 +67,10 @@ export type FerryEventSource = {
     editable: boolean;
     color: string;
     id: string;
+    /** Calendar type, so the view can label a source without parsing its id. */
+    type: CalendarInfo["type"];
+    /** The calendar's own name: a directory, a heading, or a URL. */
+    name: string;
 };
 
 /**
@@ -175,6 +179,8 @@ export default class EventCache {
                 events: events.map(({ event, id }) => ({ event, id })), // make sure not to leak location data past the cache.
                 color: calendar.color,
                 id: calId,
+                type: calendar.type,
+                name: calendar.name,
             });
         }
         return result;
@@ -579,6 +585,8 @@ export default class EventCache {
                         id: calendar.id,
                         editable: false,
                         color: calendar.color,
+                        type: calendar.type,
+                        name: calendar.name,
                         events: newEvents,
                     });
                 });

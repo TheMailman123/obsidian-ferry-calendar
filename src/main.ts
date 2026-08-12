@@ -214,4 +214,17 @@ export default class FerryCalendarPlugin extends Plugin {
         await this.cache.populate();
         this.cache.resync();
     }
+
+    /**
+     * Persist settings without disturbing the event cache.
+     *
+     * `saveSettings` rebuilds every calendar from disk and refetches the remote
+     * ones. That is correct when the set of calendar *sources* changes, but far
+     * too heavy for a preference like calendar visibility — and its resync
+     * rebuilds all event sources, which would undo the in-place source toggle
+     * it was called to persist.
+     */
+    async savePreferences() {
+        await this.saveData(this.settings);
+    }
 }
