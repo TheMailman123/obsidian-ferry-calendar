@@ -48,15 +48,20 @@ Two deviations from upstream, both deliberate:
 - The lockfile pins `obsidian` to the registry release for every consumer. `obsidian-daily-notes-interface`
   declares it as a runtime dependency resolved from a git branch, which requires git-protocol fetching.
 
-The dependency set is otherwise still upstream's, and is old. A toolchain modernisation pass is planned
-before substantial feature work.
+The build toolchain has since been modernised (TypeScript 5.9, esbuild 0.28, Obsidian 1.x API types).
+The runtime dependency set is still largely upstream's and is old; the `@fullcalendar/*` packages in
+particular are on 5.x.
 
 ## Releasing
 
 ```bash
-npm version patch|minor|major     # syncs manifest.json and versions.json
-git push && git push --tags
+npm version patch|minor|major     # syncs manifest.json and versions.json, creates the tag
+git push
+git push origin "$(node -p 'require("./manifest.json").version')"
 ```
+
+Push the one tag by name rather than `--tags`; the release workflow triggers on any tag push, so a
+blanket push fires a build for every tag it sends.
 
 Tags carry no `v` prefix and must match `manifest.json` exactly — the release workflow verifies this and
 fails the build on a mismatch. It then opens a **draft** release with `main.js`, `manifest.json`, and

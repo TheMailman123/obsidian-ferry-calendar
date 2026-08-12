@@ -20,12 +20,8 @@ jobs:
               with:
                   node-version: "22.x"
 
-            - name: Build
-              run: |
-                  npm ci
-                  npm run build
-                  mv main.css styles.css
-
+            # Checked before the build so a mismatched tag fails in seconds rather than
+            # after a full install-and-bundle cycle.
             - name: Verify tag matches manifest version
               run: |
                   tag="${GITHUB_REF#refs/tags/}"
@@ -34,6 +30,12 @@ jobs:
                     echo "Tag '$tag' does not match manifest.json version '$manifest'." >&2
                     exit 1
                   fi
+
+            - name: Build
+              run: |
+                  npm ci
+                  npm run build
+                  mv main.css styles.css
 
             - name: Create draft release
               env:

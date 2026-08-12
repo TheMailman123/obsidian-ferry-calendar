@@ -26,6 +26,8 @@ This list will move up into a features section as each part lands. Not in the co
 - Modernised toolchain: TypeScript 5.9, esbuild 0.28, Obsidian 1.x API types.
 - Fixed an event on line 0 of a file losing its line number.
 - Fixed two null-dereferences that the older, looser Obsidian typings hid.
+- Renamed the inherited `OFC*` types and `FullCalendar*` classes to `Ferry*`, and the `.ofc-` CSS
+  classes to `.ferry-`. If you styled this plugin with a CSS snippet, update those selectors.
 
 ## Installation
 
@@ -65,8 +67,9 @@ same event notes will conflict.
 ## Releasing
 
 ```bash
-npm version patch|minor|major     # syncs manifest.json + versions.json
-git push && git push --tags
+npm version patch|minor|major     # syncs manifest.json + versions.json, creates the tag
+git push
+git push origin "$(node -p 'require("./manifest.json").version')"
 ```
 
 Tags carry no `v` prefix and must match `manifest.json` exactly; the release workflow enforces this. The
