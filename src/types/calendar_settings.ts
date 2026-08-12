@@ -1,5 +1,5 @@
 import { ZodError, z } from "zod";
-import { OFCEvent } from "./schema";
+import { FerryEvent } from "./schema";
 
 const calendarOptionsSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("local"), directory: z.string() }),
@@ -20,7 +20,7 @@ const colorValidator = z.object({ color: z.string() });
 export type TestSource = {
     type: "FOR_TEST_ONLY";
     id: string;
-    events?: OFCEvent[];
+    events?: FerryEvent[];
 };
 
 export type CalendarInfo = (

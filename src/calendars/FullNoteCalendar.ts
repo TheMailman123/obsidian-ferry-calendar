@@ -2,10 +2,10 @@ import { TFile, TFolder, parseYaml } from "obsidian";
 import { rrulestr } from "rrule";
 import { EventPathLocation } from "../core/EventStore";
 import { ObsidianInterface } from "../ObsidianAdapter";
-import { OFCEvent, EventLocation, validateEvent } from "../types";
+import { FerryEvent, EventLocation, validateEvent } from "../types";
 import { EditableCalendar, EditableEventResponse } from "./EditableCalendar";
 
-const basenameFromEvent = (event: OFCEvent): string => {
+const basenameFromEvent = (event: FerryEvent): string => {
     switch (event.type) {
         case undefined:
         case "single":
@@ -17,7 +17,8 @@ const basenameFromEvent = (event: OFCEvent): string => {
     }
 };
 
-const filenameForEvent = (event: OFCEvent) => `${basenameFromEvent(event)}.md`;
+const filenameForEvent = (event: FerryEvent) =>
+    `${basenameFromEvent(event)}.md`;
 
 const FRONTMATTER_SEPARATOR = "---";
 
@@ -83,7 +84,7 @@ function stringifyYamlLine(
     return `${String(k)}: ${stringifyYamlAtom(v)}`;
 }
 
-function newFrontmatter(fields: Partial<OFCEvent>): string {
+function newFrontmatter(fields: Partial<FerryEvent>): string {
     return (
         "---\n" +
         Object.entries(fields)
@@ -96,7 +97,7 @@ function newFrontmatter(fields: Partial<OFCEvent>): string {
 
 function modifyFrontmatterString(
     page: string,
-    modifications: Partial<OFCEvent>
+    modifications: Partial<FerryEvent>
 ): string {
     const frontmatter = extractFrontmatter(page)?.split("\n");
     let newFrontmatter: string[] = [];
@@ -115,7 +116,7 @@ function modifyFrontmatterString(
                 continue;
             }
 
-            const keys = Object.keys(obj) as [keyof OFCEvent];
+            const keys = Object.keys(obj) as [keyof FerryEvent];
             if (keys.length !== 1) {
                 throw new Error("One YAML line parsed to multiple keys.");
             }
@@ -132,7 +133,7 @@ function modifyFrontmatterString(
 
         // Add all rows that were not originally in the frontmatter.
         newFrontmatter.push(
-            ...(Object.keys(modifications) as [keyof OFCEvent])
+            ...(Object.keys(modifications) as [keyof FerryEvent])
                 .filter((k) => !linesAdded.has(k))
                 .filter((k) => modifications[k] !== undefined)
                 .map((k) =>
@@ -215,7 +216,7 @@ export default class FullNoteCalendar extends EditableCalendar {
         return events;
     }
 
-    async createEvent(event: OFCEvent): Promise<EventLocation> {
+    async createEvent(event: FerryEvent): Promise<EventLocation> {
         const path = `${this.directory}/${filenameForEvent(event)}`;
         if (this.app.getAbstractFileByPath(path)) {
             throw new Error(`Event at ${path} already exists.`);
@@ -226,7 +227,7 @@ export default class FullNoteCalendar extends EditableCalendar {
 
     getNewLocation(
         location: EventPathLocation,
-        event: OFCEvent
+        event: FerryEvent
     ): EventLocation {
         const { path, lineNumber } = location;
         if (lineNumber !== undefined) {
@@ -252,7 +253,7 @@ export default class FullNoteCalendar extends EditableCalendar {
 
     async modifyEvent(
         location: EventPathLocation,
-        event: OFCEvent,
+        event: FerryEvent,
         updateCacheWithLocation: (loc: EventLocation) => void
     ): Promise<void> {
         const { path } = location;

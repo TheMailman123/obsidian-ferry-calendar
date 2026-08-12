@@ -1,7 +1,7 @@
 import {
     CommonSchema,
     EventSchema,
-    OFCEvent,
+    FerryEvent,
     ParsedDate,
     ParsedTime,
     TimeSchema,
@@ -402,7 +402,7 @@ describe("schema parsing tests", () => {
             const CommonArb = zfc.outputOf(CommonSchema);
             const TimeArb = zfc.outputOf(TimeSchema);
             const EventArb = zfc.outputOf(EventSchema);
-            const OFCEventArbitrary: fc.Arbitrary<OFCEvent> = fc
+            const FerryEventArbitrary: fc.Arbitrary<FerryEvent> = fc
                 .tuple(CommonArb, TimeArb, EventArb)
                 .map(([common, time, event]) => ({
                     ...common,
@@ -411,7 +411,7 @@ describe("schema parsing tests", () => {
                 }));
 
             fc.assert(
-                fc.property(OFCEventArbitrary, (event) => {
+                fc.property(FerryEventArbitrary, (event) => {
                     const obj = serializeEvent(event);
                     const newParsedEvent = parseEvent(obj);
                     expect(newParsedEvent).toEqual(event);

@@ -17,7 +17,12 @@ import {
 } from "obsidian-daily-notes-interface";
 import { EventPathLocation } from "../core/EventStore";
 import { ObsidianInterface } from "../ObsidianAdapter";
-import { OFCEvent, EventLocation, CalendarInfo, validateEvent } from "../types";
+import {
+    FerryEvent,
+    EventLocation,
+    CalendarInfo,
+    validateEvent,
+} from "../types";
 import { EventResponse } from "./Calendar";
 import { EditableCalendar, EditableEventResponse } from "./EditableCalendar";
 
@@ -106,8 +111,8 @@ const checkboxTodo = (s: string) => {
 
 const getInlineEventFromLine = (
     text: string,
-    globalAttrs: Partial<OFCEvent>
-): OFCEvent | null => {
+    globalAttrs: Partial<FerryEvent>
+): FerryEvent | null => {
     const attrs = getInlineAttributes(text);
 
     // Shortcut validation if there are no inline attributes.
@@ -126,8 +131,8 @@ const getInlineEventFromLine = (
 function getAllInlineEventsFromFile(
     fileText: string,
     listItems: ListItemCache[],
-    fileGlobalAttrs: Partial<OFCEvent>
-): { lineNumber: number; event: OFCEvent }[] {
+    fileGlobalAttrs: Partial<FerryEvent>
+): { lineNumber: number; event: FerryEvent }[] {
     const lines = fileText.split("\n");
     const listItemText: Line[] = listItems
         .map((i) => i.position.start.line)
@@ -155,7 +160,7 @@ const generateInlineAttributes = (attrs: Record<string, any>): string => {
 };
 
 const makeListItem = (
-    data: OFCEvent,
+    data: FerryEvent,
     whitespacePrefix: string = ""
 ): string => {
     if (data.type !== "single") {
@@ -169,13 +174,13 @@ const makeListItem = (
         return null;
     })();
 
-    const attrs: Partial<OFCEvent> = { ...data };
+    const attrs: Partial<FerryEvent> = { ...data };
     delete attrs["completed"];
     delete attrs["title"];
     delete attrs["type"];
     delete attrs["date"];
 
-    for (const key of <(keyof OFCEvent)[]>Object.keys(attrs)) {
+    for (const key of <(keyof FerryEvent)[]>Object.keys(attrs)) {
         if (attrs[key] === undefined || attrs[key] === null) {
             delete attrs[key];
         }
@@ -190,7 +195,7 @@ const makeListItem = (
     } ${title} ${generateInlineAttributes(attrs)}`;
 };
 
-const modifyListItem = (line: string, data: OFCEvent): string | null => {
+const modifyListItem = (line: string, data: FerryEvent): string | null => {
     const listMatch = line.match(listRegex);
     if (!listMatch) {
         console.warn(
@@ -210,7 +215,7 @@ const modifyListItem = (line: string, data: OFCEvent): string | null => {
 // TODO: refactor this to not do the weird props thing
 type AddToHeadingProps = {
     heading: HeadingCache | undefined;
-    item: OFCEvent;
+    item: FerryEvent;
     headingText: string;
 };
 const addToHeading = (
@@ -288,7 +293,7 @@ export default class DailyNoteCalendar extends EditableCalendar {
         ).flat();
     }
 
-    async createEvent(event: OFCEvent): Promise<EventLocation> {
+    async createEvent(event: FerryEvent): Promise<EventLocation> {
         if (event.type !== "single" && event.type !== undefined) {
             console.debug(
                 "tried creating a recurring event in a daily note",
@@ -349,7 +354,7 @@ export default class DailyNoteCalendar extends EditableCalendar {
 
     async modifyEvent(
         loc: EventPathLocation,
-        newEvent: OFCEvent,
+        newEvent: FerryEvent,
         updateCacheWithLocation: (loc: EventLocation) => void
     ): Promise<void> {
         console.debug("modified daily note event");

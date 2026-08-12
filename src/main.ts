@@ -1,15 +1,15 @@
 import { MarkdownView, Notice, Plugin, TFile } from "obsidian";
 import {
     CalendarView,
-    FULL_CALENDAR_SIDEBAR_VIEW_TYPE,
-    FULL_CALENDAR_VIEW_TYPE,
+    FERRY_CALENDAR_SIDEBAR_VIEW_TYPE,
+    FERRY_CALENDAR_VIEW_TYPE,
 } from "./ui/view";
 import { renderCalendar } from "./ui/calendar";
 import { toEventInput } from "./ui/interop";
 import {
     DEFAULT_SETTINGS,
-    FullCalendarSettings,
-    FullCalendarSettingTab,
+    FerryCalendarSettings,
+    FerryCalendarSettingTab,
 } from "./ui/settings";
 import { PLUGIN_SLUG } from "./types";
 import EventCache from "./core/EventCache";
@@ -20,8 +20,8 @@ import DailyNoteCalendar from "./calendars/DailyNoteCalendar";
 import ICSCalendar from "./calendars/ICSCalendar";
 import CalDAVCalendar from "./calendars/CalDAVCalendar";
 
-export default class FullCalendarPlugin extends Plugin {
-    settings: FullCalendarSettings = DEFAULT_SETTINGS;
+export default class FerryCalendarPlugin extends Plugin {
+    settings: FerryCalendarSettings = DEFAULT_SETTINGS;
     cache: EventCache = new EventCache({
         local: (info) =>
             info.type === "local"
@@ -63,12 +63,12 @@ export default class FullCalendarPlugin extends Plugin {
 
     async activateView() {
         const leaves = this.app.workspace
-            .getLeavesOfType(FULL_CALENDAR_VIEW_TYPE)
+            .getLeavesOfType(FERRY_CALENDAR_VIEW_TYPE)
             .filter((l) => (l.view as CalendarView).inSidebar === false);
         if (leaves.length === 0) {
             const leaf = this.app.workspace.getLeaf("tab");
             await leaf.setViewState({
-                type: FULL_CALENDAR_VIEW_TYPE,
+                type: FERRY_CALENDAR_VIEW_TYPE,
                 active: true,
             });
         } else {
@@ -110,12 +110,12 @@ export default class FullCalendarPlugin extends Plugin {
         window.cache = this.cache;
 
         this.registerView(
-            FULL_CALENDAR_VIEW_TYPE,
+            FERRY_CALENDAR_VIEW_TYPE,
             (leaf) => new CalendarView(leaf, this, false)
         );
 
         this.registerView(
-            FULL_CALENDAR_SIDEBAR_VIEW_TYPE,
+            FERRY_CALENDAR_SIDEBAR_VIEW_TYPE,
             (leaf) => new CalendarView(leaf, this, true)
         );
 
@@ -127,7 +127,7 @@ export default class FullCalendarPlugin extends Plugin {
             }
         );
 
-        this.addSettingTab(new FullCalendarSettingTab(this.app, this));
+        this.addSettingTab(new FerryCalendarSettingTab(this.app, this));
 
         this.addCommand({
             id: "ferry-calendar-new-event",
@@ -142,9 +142,9 @@ export default class FullCalendarPlugin extends Plugin {
             name: "Reset Event Cache",
             callback: () => {
                 this.cache.reset(this.settings.calendarSources);
-                this.app.workspace.detachLeavesOfType(FULL_CALENDAR_VIEW_TYPE);
+                this.app.workspace.detachLeavesOfType(FERRY_CALENDAR_VIEW_TYPE);
                 this.app.workspace.detachLeavesOfType(
-                    FULL_CALENDAR_SIDEBAR_VIEW_TYPE
+                    FERRY_CALENDAR_SIDEBAR_VIEW_TYPE
                 );
                 new Notice("Ferry Calendar has been reset.");
             },
@@ -172,7 +172,7 @@ export default class FullCalendarPlugin extends Plugin {
             callback: () => {
                 if (
                     this.app.workspace.getLeavesOfType(
-                        FULL_CALENDAR_SIDEBAR_VIEW_TYPE
+                        FERRY_CALENDAR_SIDEBAR_VIEW_TYPE
                     ).length
                 ) {
                     return;
@@ -183,7 +183,7 @@ export default class FullCalendarPlugin extends Plugin {
                     return;
                 }
                 leaf.setViewState({
-                    type: FULL_CALENDAR_SIDEBAR_VIEW_TYPE,
+                    type: FERRY_CALENDAR_SIDEBAR_VIEW_TYPE,
                 });
             },
         });
@@ -195,8 +195,8 @@ export default class FullCalendarPlugin extends Plugin {
     }
 
     onunload() {
-        this.app.workspace.detachLeavesOfType(FULL_CALENDAR_VIEW_TYPE);
-        this.app.workspace.detachLeavesOfType(FULL_CALENDAR_SIDEBAR_VIEW_TYPE);
+        this.app.workspace.detachLeavesOfType(FERRY_CALENDAR_VIEW_TYPE);
+        this.app.workspace.detachLeavesOfType(FERRY_CALENDAR_SIDEBAR_VIEW_TYPE);
     }
 
     async loadSettings() {

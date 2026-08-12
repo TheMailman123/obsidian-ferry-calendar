@@ -1,11 +1,12 @@
 import { EventApi, EventInput } from "@fullcalendar/core";
-import { OFCEvent } from "../types";
+import { FerryEvent } from "../types";
 
 import { DateTime, Duration } from "luxon";
 import { rrulestr } from "rrule";
 
 /*
- * Functions for converting between the types used by the FullCalendar view plugin and types used internally by Obsidian Full Calendar.
+ * Functions for converting between the types used by the fullcalendar.io view library and the
+ * types used internally by Ferry Calendar.
  */
 
 const parseTime = (time: string): Duration | null => {
@@ -85,7 +86,7 @@ export function dateEndpointsToFrontmatter(
     start: Date,
     end: Date,
     allDay: boolean
-): Partial<OFCEvent> {
+): Partial<FerryEvent> {
     const date = getDate(start);
     const endDate = getDate(end);
     return {
@@ -104,7 +105,7 @@ export function dateEndpointsToFrontmatter(
 
 export function toEventInput(
     id: string,
-    frontmatter: OFCEvent
+    frontmatter: FerryEvent
 ): EventInput | null {
     let event: EventInput = {
         id,
@@ -233,7 +234,7 @@ export function toEventInput(
     return event;
 }
 
-export function fromEventApi(event: EventApi): OFCEvent {
+export function fromEventApi(event: EventApi): FerryEvent {
     const isRecurring: boolean = event.extendedProps.daysOfWeek !== undefined;
     const startDate = getDate(event.start as Date);
     const endDate = getDate(event.end as Date);

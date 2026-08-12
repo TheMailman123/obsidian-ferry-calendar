@@ -90,9 +90,9 @@ type EventType = z.infer<typeof EventSchema>;
 type TimeType = z.infer<typeof TimeSchema>;
 type CommonType = z.infer<typeof CommonSchema>;
 
-export type OFCEvent = CommonType & TimeType & EventType;
+export type FerryEvent = CommonType & TimeType & EventType;
 
-export function parseEvent(obj: unknown): OFCEvent {
+export function parseEvent(obj: unknown): FerryEvent {
     if (typeof obj !== "object") {
         throw new Error("value for parsing was not an object.");
     }
@@ -104,7 +104,7 @@ export function parseEvent(obj: unknown): OFCEvent {
     };
 }
 
-export function validateEvent(obj: unknown): OFCEvent | null {
+export function validateEvent(obj: unknown): FerryEvent | null {
     try {
         return parseEvent(obj);
     } catch (e) {
@@ -126,6 +126,6 @@ type Json =
     | false
     | null;
 
-export function serializeEvent(obj: OFCEvent): Json {
+export function serializeEvent(obj: FerryEvent): Json {
     return { ...obj };
 }

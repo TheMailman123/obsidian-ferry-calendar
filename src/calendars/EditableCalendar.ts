@@ -1,9 +1,9 @@
 import { TFile } from "obsidian";
 import { EventPathLocation } from "src/core/EventStore";
-import { EventLocation, OFCEvent } from "src/types";
+import { EventLocation, FerryEvent } from "src/types";
 import { Calendar } from "./Calendar";
 
-export type EditableEventResponse = [OFCEvent, EventLocation];
+export type EditableEventResponse = [FerryEvent, EventLocation];
 
 /**
  * Abstract class representing the interface for an Calendar whose source-of-truth
@@ -11,7 +11,7 @@ export type EditableEventResponse = [OFCEvent, EventLocation];
  *
  * EditableCalendar instances handle all file I/O, typically through an ObsidianInterface.
  * The EventCache will call methods on an EditableCalendar to make updates to the Vault from user action, as well
- * as to parse events from files when the files are updated outside of Full Calendar.
+ * as to parse events from files when the files are updated outside of Ferry Calendar.
  */
 export abstract class EditableCalendar extends Calendar {
     constructor(color: string) {
@@ -40,7 +40,7 @@ export abstract class EditableCalendar extends Calendar {
      * Create an event in this calendar.
      * @param event Event to create.
      */
-    abstract createEvent(event: OFCEvent): Promise<EventLocation>;
+    abstract createEvent(event: FerryEvent): Promise<EventLocation>;
 
     /**
      * Delete an event from the calendar.
@@ -59,7 +59,7 @@ export abstract class EditableCalendar extends Calendar {
      */
     abstract modifyEvent(
         location: EventPathLocation,
-        newEvent: OFCEvent,
+        newEvent: FerryEvent,
         updateCacheWithLocation: (loc: EventLocation) => void
     ): Promise<void>;
 }

@@ -1,7 +1,7 @@
 import { DateTime } from "luxon";
 import * as React from "react";
 import { useEffect, useRef, useState } from "react";
-import { CalendarInfo, OFCEvent } from "../../types";
+import { CalendarInfo, FerryEvent } from "../../types";
 
 function makeChangeListener<T>(
     setState: React.Dispatch<React.SetStateAction<T>>,
@@ -76,14 +76,14 @@ const DaySelect = ({
 };
 
 interface EditEventProps {
-    submit: (frontmatter: OFCEvent, calendarIndex: number) => Promise<void>;
+    submit: (frontmatter: FerryEvent, calendarIndex: number) => Promise<void>;
     readonly calendars: {
         id: string;
         name: string;
         type: CalendarInfo["type"];
     }[];
     defaultCalendarIndex: number;
-    initialEvent?: Partial<OFCEvent>;
+    initialEvent?: Partial<FerryEvent>;
     open?: () => Promise<void>;
     deleteEvent?: () => Promise<void>;
 }

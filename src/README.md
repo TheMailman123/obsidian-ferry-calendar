@@ -1,8 +1,10 @@
 # Plugin Architecture
 
-Obsidian Full Calendar's goal is to give users a robust and feature-ful calendar view into their Obsidian Vault. In addition to displaying and modifying events stored in note frontmatter and daily note bulleted lists, it can also read events from the Internet in CalDAV and ICS format.
+Ferry Calendar's goal is to give users a robust and feature-ful calendar view into their vault. In addition to displaying and modifying events stored in note frontmatter and daily note bulleted lists, it can also read events from the Internet in CalDAV and ICS format.
 
-Obsidian Full Calendar takes its name from [FullCalendar](https://github.com/fullcalendar/fullcalendar), a "Full-sized drag & drop event calendar in JavaScript." This plugin uses FullCalendar as its calendar view. While the naming can be ambiguous, this document will always refer to the FullCalendar view library without any spaces, or as `fullcalendar.io`. The plugin will be referred to either as "the plugin", "Full Calendar" with a space, or "Obsidian Full Calendar".
+The view layer is [FullCalendar](https://github.com/fullcalendar/fullcalendar), a "Full-sized drag & drop event calendar in JavaScript." This document always refers to that library without a space, or as `fullcalendar.io`, and to this plugin as "the plugin" or "Ferry Calendar".
+
+This architecture is inherited from [Full Calendar](https://github.com/davish/obsidian-full-calendar), which Ferry Calendar was forked from; the descriptions below still hold. Where Ferry Calendar diverges is documented in `PLANNING.md`.
 
 As of now, the plugin supports events from the following sources and formats:
 
@@ -11,7 +13,7 @@ As of now, the plugin supports events from the following sources and formats:
 -   ICS files publicly accessible at a URL.
 -   CalDAV servers authenticated with HTTP basic authentication.
 
-Much of the code of Full Calendar exists to deal with the normalization of these formats so they can be handled by the view layer without worrying about what sources different events are actually from.
+Much of the code exists to deal with the normalization of these formats so they can be handled by the view layer without worrying about what sources different events are actually from.
 
 Below is a birds-eye view of the different components of the plugin, and the interactions between them.
 
@@ -20,8 +22,8 @@ Below is a birds-eye view of the different components of the plugin, and the int
                  │              │
 ┌────────────┐   │              │       ┌─────────────┐     ┌──────────────┐
 │            ├───►              ├───────►             ├─────►              │
-│ EventStore │   │  EventCache  │       │ view.ts +   │     │ FullCalendar │
-│            ◄───┤              ◄───────┤ calendar.ts ◄─────┤ View*        │
+│ EventStore │   │  EventCache  │       │ view.ts +   │     │ fullcalendar │
+│            ◄───┤              ◄───────┤ calendar.ts ◄─────┤ .io View*    │
 └────────────┘   │              │       │             │     │              │
                  │              │       └─────────────┘     └──────────────┘
              ┌──►└──────▲──┬────┘
@@ -47,11 +49,11 @@ Following the advice in [this blog post on architecture docs](https://matklad.gi
 
 ### `types`
 
-This module defines some common types used throughout the code. The most prevalent is `OFCEvent`, short for Obsidian Full Calendar Event, that specifies the intermediate representation for all events in the plugin. Note that FullCalendar.io uses a different event format called `EventInput`, which you can read about [in their documentation](https://fullcalendar.io/docs/event-parsing).
+This module defines some common types used throughout the code. The most prevalent is `FerryEvent`, which specifies the intermediate representation for all events in the plugin. Note that FullCalendar.io uses a different event format called `EventInput`, which you can read about [in their documentation](https://fullcalendar.io/docs/event-parsing).
 
-`OFCEvent` is derived from a [Zod parser](https://github.com/colinhacks/zod) that handles parsing/validating JavaScript objects into the expected shape of an event. You can check out the parser in `types/schema.ts`.
+`FerryEvent` is derived from a [Zod parser](https://github.com/colinhacks/zod) that handles parsing/validating JavaScript objects into the expected shape of an event. You can check out the parser in `types/schema.ts`.
 
-Translation between `OFCEvent` and `EventInput` is handled in `interop.ts`. Each `Calendar` subclass (see below) handles its own translation from its source format into `OFCEvent`.
+Translation between `FerryEvent` and `EventInput` is handled in `interop.ts`. Each `Calendar` subclass (see below) handles its own translation from its source format into `FerryEvent`.
 
 ### `core`
 

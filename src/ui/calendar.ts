@@ -198,13 +198,13 @@ export function renderCalendar(
                     };
                     // Make the checkbox more visible against different color events.
                     if (textColor == "black") {
-                        checkbox.addClass("ofc-checkbox-black");
+                        checkbox.addClass("ferry-checkbox-black");
                     } else {
-                        checkbox.addClass("ofc-checkbox-white");
+                        checkbox.addClass("ferry-checkbox-white");
                     }
 
                     if (checkbox.checked) {
-                        el.addClass("ofc-task-completed");
+                        el.addClass("ferry-task-completed");
                     }
 
                     // Depending on the view, we should put the checkbox in a different spot.
@@ -213,7 +213,7 @@ export function renderCalendar(
                         el.querySelector(".fc-event-title") ||
                         el.querySelector(".fc-list-event-title");
 
-                    container?.addClass("ofc-has-checkbox");
+                    container?.addClass("ferry-has-checkbox");
                     container?.prepend(checkbox);
                 }
             }

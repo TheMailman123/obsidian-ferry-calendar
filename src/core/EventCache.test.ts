@@ -5,11 +5,11 @@ import {
     EditableCalendar,
     EditableEventResponse,
 } from "../calendars/EditableCalendar";
-import { CalendarInfo, EventLocation, OFCEvent } from "src/types";
+import { CalendarInfo, EventLocation, FerryEvent } from "src/types";
 import EventCache, {
     CacheEntry,
     CalendarInitializerMap,
-    OFCEventSource,
+    FerryEventSource,
 } from "./EventCache";
 import { EventPathLocation } from "./EventStore";
 
@@ -27,7 +27,7 @@ const withCounter = <T>(f: (x: string) => T, label?: string) => {
 };
 
 const mockEvent = withCounter(
-    (title): OFCEvent => ({ title } as OFCEvent),
+    (title): FerryEvent => ({ title } as FerryEvent),
     "event"
 );
 
@@ -36,8 +36,8 @@ class TestReadonlyCalendar extends Calendar {
         return "test";
     }
     private _id: string;
-    events: OFCEvent[] = [];
-    constructor(color: string, id: string, events: OFCEvent[]) {
+    events: FerryEvent[] = [];
+    constructor(color: string, id: string, events: FerryEvent[]) {
         super(color);
         this._id = id;
         this.events = events;
@@ -66,7 +66,7 @@ const initializerMap = (
     caldav: () => null,
 });
 
-const extractEvents = (source: OFCEventSource): OFCEvent[] =>
+const extractEvents = (source: FerryEventSource): FerryEvent[] =>
     source.events.map(({ event }) => event);
 
 async function assertFailed(func: () => Promise<any>, message: RegExp) {
@@ -81,7 +81,7 @@ async function assertFailed(func: () => Promise<any>, message: RegExp) {
 }
 
 describe("event cache with readonly calendar", () => {
-    const makeCache = (events: OFCEvent[]) => {
+    const makeCache = (events: FerryEvent[]) => {
         const cache = new EventCache(
             initializerMap((info) => {
                 if (info.type !== "FOR_TEST_ONLY") {

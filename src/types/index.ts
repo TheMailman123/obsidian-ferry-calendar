@@ -1,6 +1,6 @@
 import { CalendarInfo } from "./calendar_settings";
 
-export type { OFCEvent } from "./schema";
+export type { FerryEvent } from "./schema";
 export { validateEvent } from "./schema";
 
 export { makeDefaultPartialCalendarSource } from "./calendar_settings";

@@ -1,5 +1,5 @@
 import ical from "ical.js";
-import { OFCEvent, validateEvent } from "../../types";
+import { FerryEvent, validateEvent } from "../../types";
 import { DateTime } from "luxon";
 import { rrulestr } from "rrule";
 
@@ -31,7 +31,7 @@ function specifiesEnd(iCalEvent: ical.Event) {
     );
 }
 
-function icsToOFC(input: ical.Event): OFCEvent {
+function icsToOFC(input: ical.Event): FerryEvent {
     if (input.isRecurring()) {
         const rrule = rrulestr(
             input.component.getFirstProperty("rrule").getFirstValue().toString()
@@ -93,7 +93,7 @@ function icsToOFC(input: ical.Event): OFCEvent {
     }
 }
 
-export function getEventsFromICS(text: string): OFCEvent[] {
+export function getEventsFromICS(text: string): FerryEvent[] {
     const jCalData = ical.parse(text);
     const component = new ical.Component(jCalData);
 
@@ -126,7 +126,7 @@ export function getEventsFromICS(text: string): OFCEvent[] {
 
     const recurrenceExceptions = events
         .filter((e) => e.recurrenceId !== null)
-        .map((e): [string, OFCEvent] => [e.uid, icsToOFC(e)]);
+        .map((e): [string, FerryEvent] => [e.uid, icsToOFC(e)]);
 
     for (const [uid, event] of recurrenceExceptions) {
         const baseEvent = baseEvents[uid];

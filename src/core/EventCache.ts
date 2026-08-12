@@ -4,7 +4,7 @@ import equal from "deep-equal";
 import { Calendar } from "../calendars/Calendar";
 import { EditableCalendar } from "../calendars/EditableCalendar";
 import EventStore, { StoredEvent } from "./EventStore";
-import { CalendarInfo, OFCEvent, validateEvent } from "../types";
+import { CalendarInfo, FerryEvent, validateEvent } from "../types";
 import RemoteCalendar from "../calendars/RemoteCalendar";
 import FullNoteCalendar from "../calendars/FullNoteCalendar";
 
@@ -13,7 +13,7 @@ export type CalendarInitializerMap = Record<
     (info: CalendarInfo) => Calendar | null
 >;
 
-export type CacheEntry = { event: OFCEvent; id: string; calendarId: string };
+export type CacheEntry = { event: FerryEvent; id: string; calendarId: string };
 
 export type UpdateViewCallback = (
     info:
@@ -22,7 +22,7 @@ export type UpdateViewCallback = (
               toRemove: string[];
               toAdd: CacheEntry[];
           }
-        | { type: "calendar"; calendar: OFCEventSource }
+        | { type: "calendar"; calendar: FerryEventSource }
         | { type: "resync" }
 ) => void;
 
@@ -33,8 +33,8 @@ const MILLICONDS_BETWEEN_REVALIDATIONS = 5 * MINUTE;
 
 // TODO: Write tests for this function.
 export const eventsAreDifferent = (
-    oldEvents: OFCEvent[],
-    newEvents: OFCEvent[]
+    oldEvents: FerryEvent[],
+    newEvents: FerryEvent[]
 ): boolean => {
     oldEvents.sort((a, b) => a.title.localeCompare(b.title));
     newEvents.sort((a, b) => a.title.localeCompare(b.title));
@@ -62,7 +62,7 @@ export const eventsAreDifferent = (
 
 export type CachedEvent = Pick<StoredEvent, "event" | "id">;
 
-export type OFCEventSource = {
+export type FerryEventSource = {
     events: CachedEvent[];
     editable: boolean;
     color: string;
@@ -165,8 +165,8 @@ export default class EventCache {
      * Get all events from the cache in a FullCalendar-friendly format.
      * @returns EventSourceInputs for FullCalendar.
      */
-    getAllEvents(): OFCEventSource[] {
-        const result: OFCEventSource[] = [];
+    getAllEvents(): FerryEventSource[] {
+        const result: FerryEventSource[] = [];
         const eventsByCalendar = this.store.eventsByCalendar;
         for (const [calId, calendar] of this.calendars.entries()) {
             const events = eventsByCalendar.get(calId) || [];
@@ -194,7 +194,7 @@ export default class EventCache {
         return cal instanceof EditableCalendar;
     }
 
-    getEventById(s: string): OFCEvent | null {
+    getEventById(s: string): FerryEvent | null {
         return this.store.getEventById(s);
     }
 
@@ -278,7 +278,7 @@ export default class EventCache {
         }
     }
 
-    private updateCalendar(calendar: OFCEventSource) {
+    private updateCalendar(calendar: FerryEventSource) {
         for (const callback of this.updateViewCallbacks) {
             callback({ type: "calendar", calendar });
         }
@@ -294,7 +294,7 @@ export default class EventCache {
      * @param event Event details
      * @returns Returns true if successful, false otherwise.
      */
-    async addEvent(calendarId: string, event: OFCEvent): Promise<boolean> {
+    async addEvent(calendarId: string, event: FerryEvent): Promise<boolean> {
         const calendar = this.calendars.get(calendarId);
         if (!calendar) {
             throw new Error(`Calendar ID ${calendarId} is not registered.`);
@@ -336,7 +336,7 @@ export default class EventCache {
      */
     async updateEventWithId(
         eventId: string,
-        newEvent: OFCEvent
+        newEvent: FerryEvent
     ): Promise<boolean> {
         const { calendar, location: oldLocation } =
             this.getInfoForEditableEvent(eventId);
@@ -376,7 +376,7 @@ export default class EventCache {
      */
     processEvent(
         id: string,
-        process: (e: OFCEvent) => OFCEvent
+        process: (e: FerryEvent) => FerryEvent
     ): Promise<boolean> {
         const event = this.store.getEventById(id);
         if (!event) {

@@ -1,11 +1,11 @@
 import { App } from "obsidian";
-import FullCalendarPlugin from "../main";
+import FerryCalendarPlugin from "../main";
 import { addCalendarButton } from "./settings";
 import { CalendarInfo } from "../types";
 
 export function renderOnboarding(
     app: App,
-    plugin: FullCalendarPlugin,
+    plugin: FerryCalendarPlugin,
     el: HTMLElement
 ) {
     el.style.height = "100%";

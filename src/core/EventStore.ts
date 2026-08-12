@@ -1,5 +1,5 @@
 import { Calendar } from "../calendars/Calendar";
-import { EventLocation, OFCEvent } from "../types";
+import { EventLocation, FerryEvent } from "../types";
 
 interface Identifier {
     id: string;
@@ -101,7 +101,7 @@ export type EventPathLocation = {
 
 export type StoredEvent = {
     id: string;
-    event: OFCEvent;
+    event: FerryEvent;
     location: EventPathLocation | null;
     calendarId: string;
 };
@@ -110,7 +110,7 @@ type AddEventProps = {
     calendar: Calendar;
     location: EventLocation | null;
     id: string;
-    event: OFCEvent;
+    event: FerryEvent;
 };
 
 type EventDetails = Omit<AddEventProps, "location" | "calendar"> & {
@@ -126,7 +126,7 @@ type FileObj = { path: string };
  * well as what file their source lives in.
  */
 export default class EventStore {
-    private store: Map<string, OFCEvent> = new Map();
+    private store: Map<string, FerryEvent> = new Map();
 
     private calendarIndex = new OneToMany<Calendar, EventID>();
 
@@ -230,7 +230,7 @@ export default class EventStore {
      * @param id ID of event to delete.
      * @returns The event if it was in the store, null otherwise.
      */
-    delete(id: string): OFCEvent | null {
+    delete(id: string): FerryEvent | null {
         const event = this.store.get(id);
         if (!event) {
             return null;
@@ -256,7 +256,7 @@ export default class EventStore {
         return eventIds;
     }
 
-    getEventById(id: string): OFCEvent | null {
+    getEventById(id: string): FerryEvent | null {
         return this.store.get(id) || null;
     }
 

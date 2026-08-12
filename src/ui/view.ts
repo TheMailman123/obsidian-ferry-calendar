@@ -2,7 +2,7 @@ import "./overrides.css";
 import { ItemView, Menu, Notice, WorkspaceLeaf } from "obsidian";
 import { Calendar, EventSourceInput } from "@fullcalendar/core";
 import { renderCalendar } from "./calendar";
-import FullCalendarPlugin from "../main";
+import FerryCalendarPlugin from "../main";
 import { FCError, PLUGIN_SLUG } from "../types";
 import {
     dateEndpointsToFrontmatter,
@@ -15,8 +15,8 @@ import { launchCreateModal, launchEditModal } from "./event_modal";
 import { isTask, toggleTask, unmakeTask } from "src/ui/tasks";
 import { UpdateViewCallback } from "src/core/EventCache";
 
-export const FULL_CALENDAR_VIEW_TYPE = "ferry-calendar-view";
-export const FULL_CALENDAR_SIDEBAR_VIEW_TYPE = "ferry-calendar-sidebar-view";
+export const FERRY_CALENDAR_VIEW_TYPE = "ferry-calendar-view";
+export const FERRY_CALENDAR_SIDEBAR_VIEW_TYPE = "ferry-calendar-sidebar-view";
 
 function getCalendarColors(color: string | null | undefined): {
     color: string;
@@ -51,14 +51,14 @@ function getCalendarColors(color: string | null | undefined): {
 }
 
 export class CalendarView extends ItemView {
-    plugin: FullCalendarPlugin;
+    plugin: FerryCalendarPlugin;
     inSidebar: boolean;
     fullCalendarView: Calendar | null = null;
     callback: UpdateViewCallback | null = null;
 
     constructor(
         leaf: WorkspaceLeaf,
-        plugin: FullCalendarPlugin,
+        plugin: FerryCalendarPlugin,
         inSidebar = false
     ) {
         super(leaf);
@@ -72,8 +72,8 @@ export class CalendarView extends ItemView {
 
     getViewType() {
         return this.inSidebar
-            ? FULL_CALENDAR_SIDEBAR_VIEW_TYPE
-            : FULL_CALENDAR_VIEW_TYPE;
+            ? FERRY_CALENDAR_SIDEBAR_VIEW_TYPE
+            : FERRY_CALENDAR_VIEW_TYPE;
     }
 
     getDisplayText() {

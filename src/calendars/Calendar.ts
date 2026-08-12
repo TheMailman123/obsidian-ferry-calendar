@@ -1,8 +1,8 @@
-import { CalendarInfo, EventLocation, OFCEvent } from "src/types";
+import { CalendarInfo, EventLocation, FerryEvent } from "src/types";
 
 export const ID_SEPARATOR = "::";
 
-export type EventResponse = [OFCEvent, EventLocation | null];
+export type EventResponse = [FerryEvent, EventLocation | null];
 
 /**
  * Abstract class representing the basic interface for a read-only Calendar.

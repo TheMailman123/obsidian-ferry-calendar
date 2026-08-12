@@ -4,7 +4,7 @@ import { TFile } from "obsidian";
 import { ObsidianInterface } from "src/ObsidianAdapter";
 import { MockApp, MockAppBuilder } from "../../test_helpers/AppBuilder";
 import { FileBuilder } from "../../test_helpers/FileBuilder";
-import { OFCEvent } from "src/types";
+import { FerryEvent } from "src/types";
 import FullNoteCalendar from "./FullNoteCalendar";
 import { parseEvent } from "../types/schema";
 
@@ -58,7 +58,7 @@ describe("Note Calendar Tests", () => {
                         title: "Test Event",
                         allDay: true,
                         date: "2022-01-01",
-                    } as OFCEvent,
+                    } as FerryEvent,
                 },
             ],
         ],
@@ -71,7 +71,7 @@ describe("Note Calendar Tests", () => {
                         title: "Test Event",
                         allDay: true,
                         date: "2022-01-01",
-                    } as OFCEvent,
+                    } as FerryEvent,
                 },
                 {
                     title: "2022-01-02 Another Test Event.md",
@@ -79,7 +79,7 @@ describe("Note Calendar Tests", () => {
                         title: "Another Test Event",
                         allDay: true,
                         date: "2022-01-02",
-                    } as OFCEvent,
+                    } as FerryEvent,
                 },
             ],
         ],
@@ -92,7 +92,7 @@ describe("Note Calendar Tests", () => {
                         title: "Test Event",
                         allDay: true,
                         date: "2022-01-01",
-                    } as OFCEvent,
+                    } as FerryEvent,
                 },
                 {
                     title: "2022-01-01 Another Test Event.md",
@@ -101,13 +101,13 @@ describe("Note Calendar Tests", () => {
                         date: "2022-01-01",
                         startTime: "11:00",
                         endTime: "12:00",
-                    } as OFCEvent,
+                    } as FerryEvent,
                 },
             ],
         ],
     ])(
         "%p",
-        async (_, inputs: { title: string; event: Partial<OFCEvent> }[]) => {
+        async (_, inputs: { title: string; event: Partial<FerryEvent> }[]) => {
             const obsidian = makeApp(
                 MockAppBuilder.make()
                     .folder(
@@ -279,7 +279,7 @@ describe("Note Calendar Tests", () => {
         `);
     });
     // it("modify an existing event with a new date", async () => {
-    // 	const event: OFCEvent = {
+    // 	const event: FerryEvent = {
     // 		title: "Test Event",
     // 		date: "2022-01-01",
     // 		startTime: "11:00",

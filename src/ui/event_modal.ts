@@ -1,15 +1,15 @@
 import { Notice } from "obsidian";
 import * as React from "react";
 import { EditableCalendar } from "src/calendars/EditableCalendar";
-import FullCalendarPlugin from "src/main";
-import { OFCEvent } from "src/types";
+import FerryCalendarPlugin from "src/main";
+import { FerryEvent } from "src/types";
 import { openFileForEvent } from "./actions";
 import { EditEvent } from "./components/EditEvent";
 import ReactModal from "./ReactModal";
 
 export function launchCreateModal(
-    plugin: FullCalendarPlugin,
-    partialEvent: Partial<OFCEvent>
+    plugin: FerryCalendarPlugin,
+    partialEvent: Partial<FerryEvent>
 ) {
     const calendars = [...plugin.cache.calendars.entries()]
         .filter(([_, cal]) => cal instanceof EditableCalendar)
@@ -41,7 +41,7 @@ export function launchCreateModal(
     ).open();
 }
 
-export function launchEditModal(plugin: FullCalendarPlugin, eventId: string) {
+export function launchEditModal(plugin: FerryCalendarPlugin, eventId: string) {
     const eventToEdit = plugin.cache.getEventById(eventId);
     if (!eventToEdit) {
         throw new Error("Cannot edit event that doesn't exist.");

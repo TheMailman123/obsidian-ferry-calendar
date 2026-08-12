@@ -1,6 +1,6 @@
 import type { Story } from "@ladle/react";
 import React from "react";
-import { OFCEvent } from "../../types";
+import { FerryEvent } from "../../types";
 
 import { EditEvent } from "./EditEvent";
 
@@ -19,7 +19,7 @@ const calendars = [
 ];
 
 const submit = async function (
-    event: OFCEvent,
+    event: FerryEvent,
     calendarIndex: number
 ): Promise<void> {
     alert("Event submitted, see console for details");
@@ -29,7 +29,7 @@ const submit = async function (
 const EventModal = ({
     initialEvent,
 }: {
-    initialEvent: Partial<OFCEvent> | undefined;
+    initialEvent: Partial<FerryEvent> | undefined;
 }) => (
     <div className="modal">
         <div className="modal-content">

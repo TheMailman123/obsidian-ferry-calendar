@@ -1,7 +1,7 @@
 import { TFile } from "obsidian";
 import { Calendar } from "../calendars/Calendar";
 import EventStore from "./EventStore";
-import { EventLocation, OFCEvent } from "../types";
+import { EventLocation, FerryEvent } from "../types";
 
 const withCounter = <T>(f: (x: string) => T, label?: string) => {
     const counter = () => {
@@ -20,7 +20,7 @@ const mockCalendar = withCounter(
 );
 
 const mockEvent = withCounter(
-    (title): OFCEvent => ({ title } as OFCEvent),
+    (title): FerryEvent => ({ title } as FerryEvent),
     "event"
 );
 

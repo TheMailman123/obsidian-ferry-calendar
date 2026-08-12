@@ -1,4 +1,4 @@
-import FullCalendarPlugin from "../main";
+import FerryCalendarPlugin from "../main";
 import {
     App,
     DropdownComponent,
@@ -17,7 +17,7 @@ import { getDailyNoteSettings } from "obsidian-daily-notes-interface";
 import ReactModal from "./ReactModal";
 import { importCalendars } from "src/calendars/parsing/caldav/import";
 
-export interface FullCalendarSettings {
+export interface FerryCalendarSettings {
     calendarSources: CalendarInfo[];
     defaultCalendar: number;
     firstDay: number;
@@ -29,7 +29,7 @@ export interface FullCalendarSettings {
     clickToCreateEventFromMonthView: boolean;
 }
 
-export const DEFAULT_SETTINGS: FullCalendarSettings = {
+export const DEFAULT_SETTINGS: FerryCalendarSettings = {
     calendarSources: [],
     defaultCalendar: 0,
     firstDay: 0,
@@ -67,7 +67,7 @@ const INITIAL_VIEW_OPTIONS = {
 
 export function addCalendarButton(
     app: App,
-    plugin: FullCalendarPlugin,
+    plugin: FerryCalendarPlugin,
     containerEl: HTMLElement,
     submitCallback: (setting: CalendarInfo) => void,
     listUsedDirectories?: () => string[]
@@ -163,10 +163,10 @@ export function addCalendarButton(
         });
 }
 
-export class FullCalendarSettingTab extends PluginSettingTab {
-    plugin: FullCalendarPlugin;
+export class FerryCalendarSettingTab extends PluginSettingTab {
+    plugin: FerryCalendarPlugin;
 
-    constructor(app: App, plugin: FullCalendarPlugin) {
+    constructor(app: App, plugin: FerryCalendarPlugin) {
         super(app, plugin);
         this.plugin = plugin;
     }
