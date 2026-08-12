@@ -89,6 +89,11 @@ export function calendarLabel(entry: Pick<KeyEntry, "name" | "type">): string {
         case "caldav":
             // CalDAV servers supply a display name already.
             return name;
+        case "derived":
+            // Named by whoever set the mapping up, and one directory can carry
+            // several of them, so the name is the only thing that tells two
+            // apart.
+            return name;
         case "FOR_TEST_ONLY":
             return name;
     }

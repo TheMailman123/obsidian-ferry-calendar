@@ -1,10 +1,23 @@
 import { ZodError, z } from "zod";
 import { FerryEvent } from "./schema";
+import { derivedMappingSchema } from "../calendars/parsing/derived";
 
 const calendarOptionsSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("local"), directory: z.string() }),
     z.object({ type: z.literal("dailynote"), heading: z.string() }),
     z.object({ type: z.literal("ical"), url: z.string().url() }),
+    z.object({
+        // A read-only projection of notes that exist for other reasons. The
+        // mapping describes how their frontmatter becomes events; see
+        // calendars/parsing/derived.ts.
+        type: z.literal("derived"),
+        // Display name, and part of the calendar's identity: one folder can
+        // carry several mappings, each its own calendar.
+        name: z.string().min(1),
+        directory: z.string(),
+        recursive: z.boolean().default(false),
+        mapping: derivedMappingSchema,
+    }),
     z.object({
         type: z.literal("caldav"),
         name: z.string(),

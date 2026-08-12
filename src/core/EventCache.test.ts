@@ -62,6 +62,7 @@ const initializerMap = (
     FOR_TEST_ONLY: cb,
     local: () => null,
     dailynote: () => null,
+    derived: () => null,
     ical: () => null,
     caldav: () => null,
 });

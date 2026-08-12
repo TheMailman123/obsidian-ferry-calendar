@@ -17,6 +17,7 @@ import { ObsidianIO } from "./ObsidianAdapter";
 import { launchCreateModal } from "./ui/event_modal";
 import FullNoteCalendar from "./calendars/FullNoteCalendar";
 import DailyNoteCalendar from "./calendars/DailyNoteCalendar";
+import DerivedCalendar from "./calendars/DerivedCalendar";
 import ICSCalendar from "./calendars/ICSCalendar";
 import CalDAVCalendar from "./calendars/CalDAVCalendar";
 
@@ -37,6 +38,17 @@ export default class FerryCalendarPlugin extends Plugin {
                       new ObsidianIO(this.app),
                       info.color,
                       info.heading
+                  )
+                : null,
+        derived: (info) =>
+            info.type === "derived"
+                ? new DerivedCalendar(
+                      new ObsidianIO(this.app),
+                      info.color,
+                      info.name,
+                      info.directory,
+                      info.recursive,
+                      info.mapping
                   )
                 : null,
         ical: (info) =>
