@@ -16,7 +16,9 @@ import { FerryEvent } from "../../types";
 
 /** How a note is excluded from a derived calendar without deleting it. */
 export const derivedFilterSchema = z.object({
-    property: z.string(),
+    // A filter on no property at all would silently exclude every note, which
+    // looks exactly like a mapping that matches nothing.
+    property: z.string().min(1),
     op: z.enum(["exists", "missing", "equals", "notEquals"]),
     /** Required by `equals`/`notEquals`, ignored by the others. */
     value: z.union([z.string(), z.number(), z.boolean()]).optional(),
@@ -46,6 +48,18 @@ export const derivedMappingSchema = z.object({
 });
 
 export type DerivedMapping = z.infer<typeof derivedMappingSchema>;
+
+/**
+ * A mapping with every default filled in and no start property chosen yet.
+ *
+ * Built by parsing so the defaults cannot drift from the schema's; the start
+ * property is blanked afterwards because the schema requires one and this is
+ * the state a settings form begins in, before the user has picked anything.
+ */
+export const emptyDerivedMapping = (): DerivedMapping => ({
+    ...derivedMappingSchema.parse({ start: "unset" }),
+    start: "",
+});
 
 /** The note fields a mapping can draw on, independent of Obsidian's TFile. */
 export type NoteRef = {

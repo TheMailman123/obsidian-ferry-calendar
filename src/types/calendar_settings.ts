@@ -1,6 +1,9 @@
 import { ZodError, z } from "zod";
 import { FerryEvent } from "./schema";
-import { derivedMappingSchema } from "../calendars/parsing/derived";
+import {
+    derivedMappingSchema,
+    emptyDerivedMapping,
+} from "../calendars/parsing/derived";
 
 const calendarOptionsSchema = z.discriminatedUnion("type", [
     z.object({ type: z.literal("local"), directory: z.string() }),
@@ -69,6 +72,22 @@ export function safeParseCalendarInfo(obj: unknown): CalendarInfo | null {
 export function makeDefaultPartialCalendarSource(
     type: CalendarInfo["type"] | "icloud"
 ): Partial<CalendarInfo> {
+    if (type === "derived") {
+        // Seeded with the mapping defaults so the form starts from a shape the
+        // schema would accept, rather than from a blank object the user has to
+        // fill in field by field to find out what is required.
+        return {
+            type: "derived",
+            color: getComputedStyle(document.body)
+                .getPropertyValue("--interactive-accent")
+                .trim(),
+            name: "",
+            directory: "",
+            recursive: false,
+            mapping: emptyDerivedMapping(),
+        };
+    }
+
     if (type === "icloud") {
         return {
             type: "caldav",

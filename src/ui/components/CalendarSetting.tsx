@@ -94,6 +94,38 @@ function NameSetting<T extends Partial<CalendarInfo>>({
     );
 }
 
+/**
+ * A derived calendar's row: its name and the folder it reads.
+ *
+ * Both are part of the calendar's identity — one folder can carry several
+ * mappings — so neither is editable in place. Changing either means removing
+ * the calendar and adding it back, which is also what keeps the stored
+ * visibility toggles from stranding against an id that quietly changed.
+ */
+function DerivedSetting<T extends Partial<CalendarInfo>>({
+    source,
+}: BasicProps<T>) {
+    const derived = source as SourceWith<
+        T,
+        { name: undefined; directory: undefined }
+    >;
+    return (
+        <div className="setting-item-control" style={{ display: "block" }}>
+            <input
+                disabled
+                type="text"
+                value={derived.name}
+                style={{ width: "100%", marginLeft: 4, marginRight: 4 }}
+            />
+            <span
+                style={{ paddingLeft: 4, fontSize: "var(--font-ui-smaller)" }}
+            >
+                read-only, from {derived.directory}
+            </span>
+        </div>
+    );
+}
+
 function Username<T extends Partial<CalendarInfo>>({ source }: BasicProps<T>) {
     let sourceWithUsername = source as SourceWith<T, { username: undefined }>;
     return (
@@ -137,6 +169,8 @@ export const CalendarSettingRow = ({
                 <DirectorySetting source={setting} />
             ) : setting.type === "dailynote" ? (
                 <HeadingSetting source={setting} />
+            ) : setting.type === "derived" ? (
+                <DerivedSetting source={setting} />
             ) : (
                 <UrlSetting source={setting} />
             )}

@@ -3,7 +3,10 @@ import { CalendarInfo } from "./calendar_settings";
 export type { FerryEvent } from "./schema";
 export { validateEvent } from "./schema";
 
-export { makeDefaultPartialCalendarSource } from "./calendar_settings";
+export {
+    makeDefaultPartialCalendarSource,
+    safeParseCalendarInfo,
+} from "./calendar_settings";
 export type { CalendarInfo } from "./calendar_settings";
 
 export const PLUGIN_SLUG = "ferry-calendar";

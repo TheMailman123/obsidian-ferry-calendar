@@ -120,6 +120,35 @@ export default class DerivedCalendar extends VaultCalendar {
     }
 
     async getEvents(): Promise<EventResponse[]> {
+        const outcomes = this.mapFolder();
+
+        this.report(summarizeOutcomes(outcomes));
+
+        return outcomes.flatMap(({ file, outcome }): EventResponse[] =>
+            outcome.status === "event"
+                ? [[outcome.event, { file, lineNumber: undefined }]]
+                : []
+        );
+    }
+
+    /**
+     * What this mapping would make of its folder, without loading anything.
+     *
+     * Backs the settings preview. It runs the same traversal and the same
+     * mapper that getEvents does, so the counts shown before saving cannot
+     * drift from what the calendar actually renders afterwards — which would
+     * make the preview worse than useless.
+     */
+    previewMapping(): MappingReport {
+        return summarizeOutcomes(this.mapFolder());
+    }
+
+    /** Map every note this calendar reads. */
+    private mapFolder(): {
+        path: string;
+        file: TFile;
+        outcome: MappingOutcome;
+    }[] {
         // The root folder is "" for prefix comparison but "/" to look up.
         const folder = this.app.getAbstractFileByPath(this._directory || "/");
         if (!folder) {
@@ -133,20 +162,11 @@ export default class DerivedCalendar extends VaultCalendar {
             );
         }
 
-        const files = this.collectFiles(folder);
-        const outcomes = files.map((file) => ({
+        return this.collectFiles(folder).map((file) => ({
             path: file.path,
             file,
             outcome: this.mapNote(file),
         }));
-
-        this.report(summarizeOutcomes(outcomes));
-
-        return outcomes.flatMap(({ file, outcome }): EventResponse[] =>
-            outcome.status === "event"
-                ? [[outcome.event, { file, lineNumber: undefined }]]
-                : []
-        );
     }
 
     /** Markdown files this calendar reads, honouring `recursive`. */

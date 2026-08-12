@@ -1,6 +1,12 @@
 import * as React from "react";
-import { useState } from "react";
-import { CalendarInfo } from "../../types";
+import { useMemo, useState } from "react";
+import { CalendarInfo, safeParseCalendarInfo } from "../../types";
+import { MappingReport } from "../../calendars/parsing/derived";
+import {
+    DerivedDraft,
+    DerivedMappingForm,
+    MappingPreview,
+} from "./DerivedCalendarSource";
 
 type ChangeListener = <T extends Partial<CalendarInfo>>(
     fromString: (val: string) => T
@@ -218,21 +224,36 @@ function PasswordInput<T extends Partial<CalendarInfo>>({
 
 interface AddCalendarProps {
     source: Partial<CalendarInfo>;
+    /** Every folder in the vault. */
     directories: string[];
+    /** Folders already backing an editable calendar, which may not be reused. */
+    usedDirectories: string[];
     headings: string[];
+    /** Frontmatter properties present in a folder, for the mapping form. */
+    listProperties: (directory: string, recursive: boolean) => string[];
+    /** What a draft mapping would make of its folder. */
+    previewDerived: (draft: DerivedDraft) => {
+        report: MappingReport | null;
+        error: string | null;
+    };
     submit: (source: CalendarInfo) => Promise<void>;
 }
 
 export const AddCalendarSource = ({
     source,
     directories,
+    usedDirectories,
     headings,
+    listProperties,
+    previewDerived,
     submit,
 }: AddCalendarProps) => {
     const isCalDAV = source.type === "caldav";
+    const isDerived = source.type === "derived";
 
     const [setting, setSettingState] = useState(source);
     const [submitting, setSubmitingState] = useState(false);
+    const [error, setError] = useState<string | null>(null);
     const [submitText, setSubmitText] = useState(
         isCalDAV ? "Import Calendars" : "Add Calendar"
     );
@@ -243,13 +264,45 @@ export const AddCalendarSource = ({
         return (e) => setSettingState(fromString(e.target.value));
     }
 
+    const draft = setting as DerivedDraft;
+
+    // Both of these walk the chosen folder, so they are recomputed only when
+    // something they actually depend on changes — not on every keystroke
+    // elsewhere in the form.
+    const properties = useMemo(
+        () =>
+            isDerived && draft.directory
+                ? listProperties(draft.directory, !!draft.recursive)
+                : [],
+        [isDerived, draft.directory, draft.recursive]
+    );
+
+    const preview = useMemo(
+        () =>
+            isDerived
+                ? previewDerived(draft)
+                : { report: null, error: null as string | null },
+        [isDerived, draft]
+    );
+
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
-        if (!submitting) {
-            setSubmitingState(true);
-            setSubmitText(isCalDAV ? "Importing Calendars" : "Adding Calendar");
-            await submit(setting as CalendarInfo);
+        if (submitting) {
+            return;
         }
+        // A derived source has a nested mapping that no amount of `required`
+        // on the inputs fully covers, so it is checked against the schema that
+        // will have to load it back from data.json.
+        if (isDerived && !safeParseCalendarInfo(setting)) {
+            setError(
+                "This mapping is incomplete: check that the name, directory and start date property are all filled in."
+            );
+            return;
+        }
+        setError(null);
+        setSubmitingState(true);
+        setSubmitText(isCalDAV ? "Importing Calendars" : "Adding Calendar");
+        await submit(setting as CalendarInfo);
     };
 
     return (
@@ -269,8 +322,29 @@ export const AddCalendarSource = ({
                     <DirectorySelect
                         source={setting}
                         changeListener={makeChangeListener}
-                        directories={directories}
+                        // An editable calendar owns its directory; two of them
+                        // sharing one would fight over the same notes.
+                        directories={directories.filter(
+                            (dir) => !usedDirectories.includes(dir)
+                        )}
                     />
+                )}
+                {isDerived && (
+                    <>
+                        <DerivedMappingForm
+                            draft={draft}
+                            setDraft={setSettingState}
+                            // Deliberately unfiltered: a derived calendar only
+                            // reads, so several may share a folder — and may
+                            // share one with an editable calendar too.
+                            directories={directories}
+                            properties={properties}
+                        />
+                        <MappingPreview
+                            report={preview.report}
+                            error={preview.error}
+                        />
+                    </>
                 )}
                 {source.type === "dailynote" && (
                     <HeadingInput
@@ -296,6 +370,15 @@ export const AddCalendarSource = ({
                         source={setting}
                         changeListener={makeChangeListener}
                     />
+                )}
+                {error && (
+                    <div className="setting-item">
+                        <div className="setting-item-info">
+                            <div className="setting-item-description">
+                                {error}
+                            </div>
+                        </div>
+                    </div>
                 )}
                 <div className="setting-item">
                     <div className="setting-item-info" />
