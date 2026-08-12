@@ -268,10 +268,21 @@ export class CalendarView extends ItemView {
             forceNarrow: this.inSidebar,
             eventClick: async (info) => {
                 try {
-                    if (
+                    const modified =
                         info.jsEvent.getModifierState("Control") ||
-                        info.jsEvent.getModifierState("Meta")
-                    ) {
+                        info.jsEvent.getModifierState("Meta");
+
+                    // A read-only event is a view onto a note the plugin does
+                    // not own, so there is nothing to edit: a click opens the
+                    // note itself, and a modified click opens it in a split.
+                    if (!this.plugin.cache.isEventEditable(info.event.id)) {
+                        await openFileForEvent(
+                            this.plugin.cache,
+                            this.app,
+                            info.event.id,
+                            modified
+                        );
+                    } else if (modified) {
                         await openFileForEvent(
                             this.plugin.cache,
                             this.app,
@@ -334,7 +345,9 @@ export class CalendarView extends ItemView {
 
             eventMouseEnter: async (info) => {
                 try {
-                    const location = this.plugin.cache.getInfoForEditableEvent(
+                    // Any event backed by a note gets native page preview,
+                    // including read-only ones.
+                    const location = this.plugin.cache.getInfoForEvent(
                         info.event.id
                     ).location;
                     if (location) {
@@ -402,6 +415,15 @@ export class CalendarView extends ItemView {
                             }
                             await this.plugin.cache.deleteEvent(e.id);
                             new Notice(`Deleted event "${e.title}".`);
+                        })
+                    );
+                } else if (this.plugin.cache.getNotePathForEvent(e.id)) {
+                    // Read-only, but sourced from a note: the only thing on
+                    // offer is opening it. No delete — the note is not the
+                    // plugin's to remove, whatever the calendar shows.
+                    menu.addItem((item) =>
+                        item.setTitle("Go to note").onClick(() => {
+                            openFileForEvent(this.plugin.cache, this.app, e.id);
                         })
                     );
                 } else {

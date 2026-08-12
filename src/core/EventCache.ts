@@ -210,12 +210,61 @@ export default class EventCache {
     }
 
     /**
-     * Get calendar and location information for a given event in an editable calendar.
+     * Path of the note an event was read from, or null if it has none.
+     *
+     * Remote events have no note behind them; events from any vault calendar
+     * do, editable or not. Callers offering to *open* the note want this, since
+     * asking whether an event can be edited answers a different question.
+     * @param eventId ID of event in question.
+     */
+    getNotePathForEvent(eventId: string): string | null {
+        return this.store.getEventDetails(eventId)?.location?.path ?? null;
+    }
+
+    /**
+     * Get calendar and location information for a given event in the Vault.
      * Throws an error if event is not found or if it does not have a location in the Vault.
+     *
+     * Deliberately indifferent to whether the calendar is editable: opening the
+     * note an event came from is as valid for a read-only projection as for an
+     * event the plugin owns. Anything that intends to *write* must go through
+     * getInfoForEditableEvent instead.
+     * @param eventId ID of event in question.
+     * @returns Calendar and location for an event.
+     */
+    getInfoForEvent(eventId: string) {
+        const { calendar, location } = this.resolveEvent(eventId);
+        if (!location) {
+            throw new Error(
+                `Event with ID ${eventId} does not have a location in the Vault.`
+            );
+        }
+        return { calendar, location };
+    }
+
+    /**
+     * As getInfoForEvent, but only for events the plugin may write back.
+     *
+     * Editability is checked first on purpose: when a write is attempted
+     * against a read-only calendar, that is the useful thing to say, even if
+     * the event also happens to have no location.
      * @param eventId ID of event in question.
      * @returns Calendar and location for an event.
      */
     getInfoForEditableEvent(eventId: string) {
+        const { calendar } = this.resolveEvent(eventId);
+        if (!(calendar instanceof EditableCalendar)) {
+            throw new Error(`Read-only events cannot be modified.`);
+        }
+        const { location } = this.getInfoForEvent(eventId);
+        return { calendar, location };
+    }
+
+    /**
+     * Look up an event's calendar and its location, which may be absent.
+     * @param eventId ID of event in question.
+     */
+    private resolveEvent(eventId: string) {
         const details = this.store.getEventDetails(eventId);
         if (!details) {
             throw new Error(`Event ID ${eventId} not present in event store.`);
@@ -224,15 +273,6 @@ export default class EventCache {
         const calendar = this.calendars.get(calendarId);
         if (!calendar) {
             throw new Error(`Calendar ID ${calendarId} is not registered.`);
-        }
-        if (!(calendar instanceof EditableCalendar)) {
-            // console.warn("Cannot modify event of type " + calendar.type);
-            throw new Error(`Read-only events cannot be modified.`);
-        }
-        if (!location) {
-            throw new Error(
-                `Event with ID ${eventId} does not have a location in the Vault.`
-            );
         }
         return { calendar, location };
     }
