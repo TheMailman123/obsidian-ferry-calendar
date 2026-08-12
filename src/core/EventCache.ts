@@ -7,6 +7,7 @@ import EventStore, { StoredEvent } from "./EventStore";
 import { CalendarInfo, FerryEvent, validateEvent } from "../types";
 import RemoteCalendar from "../calendars/RemoteCalendar";
 import FullNoteCalendar from "../calendars/FullNoteCalendar";
+import { VaultCalendar } from "../calendars/VaultCalendar";
 
 export type CalendarInitializerMap = Record<
     CalendarInfo["type"],
@@ -460,9 +461,11 @@ export default class EventCache {
     async fileUpdated(file: TFile): Promise<void> {
         console.debug("fileUpdated() called for file", file.path);
 
-        // Get all calendars that contain events stored in this file.
+        // Get all calendars that contain events stored in this file. Any
+        // vault-sourced calendar reloads here, editable or not: a read-only
+        // calendar still has to notice when its source note changes.
         const calendars = [...this.calendars.values()].flatMap((c) =>
-            c instanceof EditableCalendar && c.containsPath(file.path) ? c : []
+            c instanceof VaultCalendar && c.containsPath(file.path) ? c : []
         );
 
         // If no calendars exist, return early.
@@ -494,11 +497,14 @@ export default class EventCache {
             );
 
             // If no events have changed from what's in the cache, then there's no need to update the event store.
+            // Skip only this calendar, not the rest: several calendars can read
+            // the same file — two mappings over one directory, say — and an
+            // unchanged first one must not abandon the others.
             if (!eventsHaveChanged) {
                 console.debug(
                     "events have not changed, do not update store or view."
                 );
-                return;
+                continue;
             }
             console.debug(
                 "events have changed, updating store and views...",
@@ -529,6 +535,12 @@ export default class EventCache {
 
             idsToRemove.push(...oldIds);
             eventsToAdd.push(...newEventsWithIds);
+        }
+
+        // Every calendar reading this file may have found nothing to change, in
+        // which case subscribers get no callback at all rather than an empty one.
+        if (idsToRemove.length === 0 && eventsToAdd.length === 0) {
+            return;
         }
 
         this.updateViews(idsToRemove, eventsToAdd);

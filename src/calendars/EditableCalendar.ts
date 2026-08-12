@@ -1,40 +1,25 @@
-import { TFile } from "obsidian";
 import { EventPathLocation } from "src/core/EventStore";
 import { EventLocation, FerryEvent } from "src/types";
-import { Calendar } from "./Calendar";
+import { VaultCalendar, VaultEventResponse } from "./VaultCalendar";
 
-export type EditableEventResponse = [FerryEvent, EventLocation];
+export type EditableEventResponse = VaultEventResponse;
 
 /**
  * Abstract class representing the interface for an Calendar whose source-of-truth
- * is the Obsidian Vault.
+ * is the Obsidian Vault and which the plugin is allowed to write back to.
  *
  * EditableCalendar instances handle all file I/O, typically through an ObsidianInterface.
  * The EventCache will call methods on an EditableCalendar to make updates to the Vault from user action, as well
  * as to parse events from files when the files are updated outside of Ferry Calendar.
+ *
+ * The write methods below are what separates this from a plain VaultCalendar:
+ * read-only calendar types extend that instead, so they have no write path to
+ * their source notes at all rather than a disabled one.
  */
-export abstract class EditableCalendar extends Calendar {
+export abstract class EditableCalendar extends VaultCalendar {
     constructor(color: string) {
         super(color);
     }
-
-    /**
-     * Directory where events for this calendar are stored.
-     */
-    abstract get directory(): string;
-
-    /**
-     * Returns true if this calendar sources events from the given path.
-     */
-    containsPath(path: string): boolean {
-        return path.startsWith(this.directory);
-    }
-
-    /**
-     * Get all events in a given file.
-     * @param file File to parse
-     */
-    abstract getEventsInFile(file: TFile): Promise<EditableEventResponse[]>;
 
     /**
      * Create an event in this calendar.
