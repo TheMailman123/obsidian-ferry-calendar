@@ -27,26 +27,51 @@ import { join, resolve } from "path";
 const PLUGIN_ID = JSON.parse(readFileSync("manifest.json", "utf8")).id;
 const LOCAL_CONFIG = ".deploy.local.json";
 
-function resolveVault() {
-    if (process.env.FERRY_VAULT) return process.env.FERRY_VAULT;
+/**
+ * Deploy targets, in precedence order: FERRY_VAULT (single vault, for one-off
+ * deploys), then `vaults` or `vault` from the local config. `vaults` exists
+ * because the plugin is routinely deployed to more than one vault at a time.
+ *
+ * @returns {string[]} one or more vault paths, unresolved
+ */
+function resolveVaults() {
+    if (process.env.FERRY_VAULT) return [process.env.FERRY_VAULT];
 
     if (existsSync(LOCAL_CONFIG)) {
-        const { vault } = JSON.parse(readFileSync(LOCAL_CONFIG, "utf8"));
-        if (vault) return vault;
+        const { vault, vaults } = JSON.parse(readFileSync(LOCAL_CONFIG, "utf8"));
+
+        if (vaults !== undefined) {
+            if (!Array.isArray(vaults) || vaults.length === 0) {
+                throw new Error(
+                    `'vaults' in ${LOCAL_CONFIG} must be a non-empty array of paths.`
+                );
+            }
+            // Both keys set is ambiguous about which wins — refuse rather than pick.
+            if (vault !== undefined) {
+                throw new Error(
+                    `${LOCAL_CONFIG} sets both 'vault' and 'vaults'. Use one.`
+                );
+            }
+            return vaults;
+        }
+
+        if (vault) return [vault];
     }
 
     throw new Error(
-        `No deploy target. Set FERRY_VAULT=/path/to/vault, or create ${LOCAL_CONFIG} with { "vault": "/path/to/vault" }.`
+        `No deploy target. Set FERRY_VAULT=/path/to/vault, or create ${LOCAL_CONFIG} with ` +
+            `{ "vault": "/path/to/vault" } or { "vaults": ["/path/one", "/path/two"] }.`
     );
 }
 
-const vault = resolve(resolveVault());
-if (!existsSync(join(vault, ".obsidian"))) {
-    throw new Error(`Not an Obsidian vault (no .obsidian directory): ${vault}`);
+// Validate every target before copying into any of them, so a typo in the
+// second path cannot leave the first vault updated and the second stale.
+const vaults = resolveVaults().map((v) => resolve(v));
+for (const vault of vaults) {
+    if (!existsSync(join(vault, ".obsidian"))) {
+        throw new Error(`Not an Obsidian vault (no .obsidian directory): ${vault}`);
+    }
 }
-
-const target = join(vault, ".obsidian", "plugins", PLUGIN_ID);
-mkdirSync(target, { recursive: true });
 
 // esbuild emits main.css; Obsidian expects it as styles.css.
 const artefacts = [
@@ -85,9 +110,15 @@ if (builtAt < newestSource) {
     );
 }
 
-for (const [src, dest] of artefacts) {
-    copyFileSync(src, join(target, dest));
+for (const vault of vaults) {
+    const target = join(vault, ".obsidian", "plugins", PLUGIN_ID);
+    mkdirSync(target, { recursive: true });
+
+    for (const [src, dest] of artefacts) {
+        copyFileSync(src, join(target, dest));
+    }
+
+    console.log(`Deployed ${PLUGIN_ID} → ${target}`);
 }
 
-console.log(`Deployed ${PLUGIN_ID} → ${target}`);
 console.log(artefacts.map(([, d]) => `  ${d}`).join("\n"));

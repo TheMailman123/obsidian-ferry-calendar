@@ -60,6 +60,13 @@ or persist the target in `.deploy.local.json` (gitignored):
 { "vault": "/path/to/vault" }
 ```
 
+To deploy to several vaults at once, use `vaults` instead. Every path is validated before anything is
+copied, so a typo cannot leave one vault updated and another stale:
+
+```json
+{ "vaults": ["/path/to/vault-one", "/path/to/vault-two"] }
+```
+
 Install the [Hot-Reload](https://github.com/pjeby/hot-reload) plugin in your test vault to pick up
 rebuilds without restarting Obsidian. Disable stock Full Calendar there first — two plugins writing the
 same event notes will conflict.

@@ -32,6 +32,13 @@ or persist it in `.deploy.local.json` (gitignored):
 { "vault": "/path/to/test-vault" }
 ```
 
+Use `vaults` for more than one target. All paths are checked before the first copy, so a bad path
+fails the whole deploy rather than updating some vaults and not others:
+
+```json
+{ "vaults": ["/path/to/test-vault", "/path/to/other-vault"] }
+```
+
 The [hot reload plugin](https://github.com/pjeby/hot-reload) picks up rebuilds without restarting
 Obsidian. Disable stock Full Calendar in the same vault — two plugins writing the same event notes will
 conflict.
