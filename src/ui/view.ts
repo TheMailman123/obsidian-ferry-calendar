@@ -61,6 +61,8 @@ export class CalendarView extends ItemView {
     inSidebar: boolean;
     fullCalendarView: Calendar | null = null;
     callback: UpdateViewCallback | null = null;
+    /** Container for the calendar key, redrawn whenever the calendars change. */
+    private keyEl: HTMLElement | null = null;
 
     constructor(
         leaf: WorkspaceLeaf,
@@ -155,6 +157,25 @@ export class CalendarView extends ItemView {
         view.addEventSource(this.translateSource(source));
     }
 
+    /**
+     * Redraw the key from the cache's current calendars.
+     *
+     * Called from the cache's update callback, which is synchronous, so the
+     * promise is handled here rather than returned. A failure to redraw the key
+     * must not take down the event handler that also refreshes the events.
+     */
+    private refreshKey(): void {
+        if (!this.keyEl) {
+            return;
+        }
+        this.renderKey(this.keyEl).catch((e) => {
+            console.error("Failed to render the calendar key.", e);
+            if (e instanceof Error) {
+                new Notice(e.message);
+            }
+        });
+    }
+
     /** Persist a toggle and reflect it in the calendar. */
     private async toggleCalendar(
         calendarId: string,
@@ -226,6 +247,7 @@ export class CalendarView extends ItemView {
                 (s) => s.type !== "FOR_TEST_ONLY"
             ).length === 0
         ) {
+            this.keyEl = null;
             renderOnboarding(this.app, this.plugin, container.createEl("div"));
             return;
         }
@@ -233,6 +255,7 @@ export class CalendarView extends ItemView {
         // Created before the calendar so the key sits above it. Populated once
         // the calendar exists, since toggling a row acts on it.
         const keyEl = container.createDiv({ cls: "ferry-key-container" });
+        this.keyEl = keyEl;
         let calendarEl = container.createEl("div");
 
         const sources: EventSourceInput[] = this.translateSources();
@@ -434,6 +457,11 @@ export class CalendarView extends ItemView {
                 sources.forEach((source) =>
                     this.fullCalendarView?.addEventSource(source)
                 );
+                // A resync is the only signal that the set of calendars itself
+                // may have changed, so the key has to be rebuilt alongside the
+                // event sources — otherwise a calendar added or removed in
+                // settings leaves a stale row, or none at all.
+                this.refreshKey();
                 return;
             } else if (payload.type === "events") {
                 const { toRemove, toAdd } = payload;
@@ -494,6 +522,7 @@ export class CalendarView extends ItemView {
     }
 
     async onunload() {
+        this.keyEl = null;
         if (this.fullCalendarView) {
             this.fullCalendarView.destroy();
             this.fullCalendarView = null;
