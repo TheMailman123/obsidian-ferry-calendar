@@ -78,11 +78,14 @@ export const RecurringEvent: Story = () => (
         initialEvent={{
             title: "Event title",
             type: "recurring",
-            startRecur: new Date().toISOString().slice(0, 10),
             allDay: false,
             startTime: "12:00",
             endTime: "13:30",
-            daysOfWeek: ["M", "R"],
+            recurring: {
+                start: new Date().toISOString().slice(0, 10),
+                freq: "weekly",
+                byDay: ["MO", "TH"],
+            },
         }}
     ></EventModal>
 );

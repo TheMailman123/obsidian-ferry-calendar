@@ -216,7 +216,6 @@ describe("Note Calendar Tests", () => {
             allDay: false
             startTime: 11:00
             endTime: 12:30
-            type: single
             date: 2022-01-01
             endDate: null
             ---
@@ -334,13 +333,107 @@ describe("Note Calendar Tests", () => {
             allDay: false
             startTime: 11:00
             endTime: 13:30
-            type: single
             date: 2022-01-01
             endDate: null
             ---
             "
         `);
     });
+    it("writes a recurring event's rule as an authored block", async () => {
+        const obsidian = makeApp(MockAppBuilder.make().done());
+        const calendar = new FullNoteCalendar(obsidian, color, dirName);
+        (obsidian.create as jest.Mock).mockReturnValue({
+            path: join(dirName, "20260317_Gym.md"),
+        });
+
+        await calendar.createEvent(
+            parseEvent({
+                title: "Gym",
+                allDay: false,
+                startTime: "06:30",
+                endTime: "07:30",
+                recurring: {
+                    start: "2026-03-17",
+                    freq: "weekly",
+                    byDay: ["TU", "TH"],
+                    count: 10,
+                },
+            })
+        );
+
+        const [path, contents] = (obsidian.create as jest.Mock).mock.calls[0];
+        expect(path).toBe("events/20260317_Gym.md");
+        expect(contents).toMatchInlineSnapshot(`
+            "---
+            title: Gym
+            allDay: false
+            startTime: 06:30
+            endTime: 07:30
+            recurring:
+              start: 2026-03-17
+              freq: weekly
+              byDay: [TU,TH]
+              count: 10
+            ---
+            "
+        `);
+    });
+
+    it("retires the inherited recurrence keys when it writes", async () => {
+        // A note written by the original plugin, opened and then edited: the
+        // rule it carries is upgraded on read, and saving it must leave one
+        // description of the recurrence behind rather than two.
+        const filename = "20260317_Gym.md";
+        const obsidian = makeApp(
+            MockAppBuilder.make()
+                .folder(
+                    new MockAppBuilder("events").file(
+                        filename,
+                        new FileBuilder().frontmatter({
+                            title: "Gym",
+                            allDay: true,
+                            type: "recurring",
+                            daysOfWeek: ["T", "R"],
+                            startRecur: "2026-03-17",
+                        })
+                    )
+                )
+                .done()
+        );
+        const calendar = new FullNoteCalendar(obsidian, color, dirName);
+        const file = obsidian.getAbstractFileByPath(
+            join("events", filename)
+        ) as TFile;
+        const contents = await obsidian.read(file);
+
+        const event = parseEvent({
+            title: "Gym",
+            allDay: true,
+            type: "recurring",
+            daysOfWeek: ["T", "R"],
+            startRecur: "2026-03-17",
+        });
+        await calendar.modifyEvent(
+            { path: join("events", filename), lineNumber: undefined },
+            event,
+            jest.fn()
+        );
+
+        const [, rewriteCallback] = (obsidian.rewrite as jest.Mock).mock
+            .calls[0];
+        expect(rewriteCallback(contents)).toMatchInlineSnapshot(`
+            "---
+            title: Gym
+            allDay: true
+            recurring:
+              start: 2026-03-17
+              freq: weekly
+              byDay: [TU,TH]
+            ---
+            "
+        `);
+    });
+
     const modifyFixture = (filename: string) => {
         const event = parseEvent({
             title: "Test Event",

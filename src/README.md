@@ -54,6 +54,8 @@ This module defines some common types used throughout the code. The most prevale
 
 `FerryEvent` is derived from a [Zod parser](https://github.com/colinhacks/zod) that handles parsing/validating JavaScript objects into the expected shape of an event. You can check out the parser in `types/schema.ts`.
 
+An event is one of three shapes: `single`, `recurring` (a `recurring:` block holding the rule as authored), and `rrule` (a compiled RRULE string, built internally by ICS and derived calendars and never written to a note). Which one a note holds is *inferred* rather than authored — a `recurring:` block is what makes an event recurring — so `type` is not a key users write, and `serializeEvent` drops it again on the way out. The recurrence shape the plugin was forked with, `daysOfWeek`/`startRecur`/`endRecur`, is still read: `parseEvent` converts it to a `recurring` block, and the next save removes the keys it replaced so the note is never left describing its repetition twice.
+
 Translation between `FerryEvent` and `EventInput` is handled in `interop.ts`. Each `Calendar` subclass (see below) handles its own translation from its source format into `FerryEvent`.
 
 ### `core`

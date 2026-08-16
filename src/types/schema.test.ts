@@ -212,89 +212,104 @@ describe("schema parsing tests", () => {
             `);
         });
     });
-    describe("simple recurring events", () => {
-        it("recurs once per week", () => {
+    describe("recurring events", () => {
+        it("infers the type from the authored block", () => {
+            // No `type` key: §3.1's frontmatter does not have one, and the
+            // presence of a rule is what makes an event recurring.
             expect(
                 parseEvent({
-                    title: "Test",
+                    title: "Gym",
                     allDay: true,
-                    type: "recurring",
-                    daysOfWeek: ["M"],
+                    recurring: {
+                        start: "2026-03-17",
+                        freq: "weekly",
+                        byDay: ["TU", "TH"],
+                        count: 10,
+                    },
                 })
             ).toMatchInlineSnapshot(`
                 {
                   "allDay": true,
-                  "daysOfWeek": [
-                    "M",
-                  ],
-                  "title": "Test",
+                  "recurring": {
+                    "byDay": [
+                      "TU",
+                      "TH",
+                    ],
+                    "count": 10,
+                    "freq": "weekly",
+                    "start": "2026-03-17",
+                  },
+                  "title": "Gym",
                   "type": "recurring",
                 }
             `);
         });
-        it("recurs twice per week", () => {
+
+        it("keeps skipDates alongside the rule", () => {
+            expect(
+                parseEvent({
+                    title: "Gym",
+                    allDay: true,
+                    recurring: { start: "2026-03-17", freq: "weekly" },
+                    skipDates: ["2026-03-26"],
+                })
+            ).toMatchInlineSnapshot(`
+                {
+                  "allDay": true,
+                  "recurring": {
+                    "freq": "weekly",
+                    "start": "2026-03-17",
+                  },
+                  "skipDates": [
+                    "2026-03-26",
+                  ],
+                  "title": "Gym",
+                  "type": "recurring",
+                }
+            `);
+        });
+
+        it("rejects a skipDate that YAML read as a number", () => {
+            // `skipDates: [20260326]` unquoted is a list of integers, not of
+            // dates, and silently dropping it would mean an occurrence the user
+            // deleted coming back.
+            expect(() =>
+                parseEvent({
+                    title: "Gym",
+                    allDay: true,
+                    recurring: { start: "2026-03-17", freq: "weekly" },
+                    skipDates: [20260326],
+                })
+            ).toThrow("an unquoted 20260326 is a number to YAML");
+        });
+
+        it("upgrades the inherited weekday shape", () => {
             expect(
                 parseEvent({
                     title: "Test",
                     allDay: true,
                     type: "recurring",
                     daysOfWeek: ["M", "W"],
-                })
-            ).toMatchInlineSnapshot(`
-                {
-                  "allDay": true,
-                  "daysOfWeek": [
-                    "M",
-                    "W",
-                  ],
-                  "title": "Test",
-                  "type": "recurring",
-                }
-            `);
-        });
-        it("recurs with start date", () => {
-            expect(
-                parseEvent({
-                    title: "Test",
-                    allDay: true,
-                    type: "recurring",
-                    daysOfWeek: ["M"],
                     startRecur: "2023-01-05",
                 })
             ).toMatchInlineSnapshot(`
                 {
                   "allDay": true,
-                  "daysOfWeek": [
-                    "M",
-                  ],
-                  "startRecur": "2023-01-05",
+                  "recurring": {
+                    "byDay": [
+                      "MO",
+                      "WE",
+                    ],
+                    "freq": "weekly",
+                    "start": "2023-01-05",
+                  },
                   "title": "Test",
                   "type": "recurring",
                 }
             `);
         });
-        it("recurs with end date", () => {
-            expect(
-                parseEvent({
-                    title: "Test",
-                    allDay: true,
-                    type: "recurring",
-                    daysOfWeek: ["M"],
-                    endRecur: "2023-01-05",
-                })
-            ).toMatchInlineSnapshot(`
-                {
-                  "allDay": true,
-                  "daysOfWeek": [
-                    "M",
-                  ],
-                  "endRecur": "2023-01-05",
-                  "title": "Test",
-                  "type": "recurring",
-                }
-            `);
-        });
-        it("recurs with both start and end dates", () => {
+
+        it("upgrades an inherited end date to until", () => {
             expect(
                 parseEvent({
                     title: "Test",
@@ -307,11 +322,53 @@ describe("schema parsing tests", () => {
             ).toMatchInlineSnapshot(`
                 {
                   "allDay": true,
-                  "daysOfWeek": [
-                    "M",
-                  ],
-                  "endRecur": "2023-05-12",
-                  "startRecur": "2023-01-05",
+                  "recurring": {
+                    "byDay": [
+                      "MO",
+                    ],
+                    "freq": "weekly",
+                    "start": "2023-01-05",
+                    "until": "2023-05-12",
+                  },
+                  "title": "Test",
+                  "type": "recurring",
+                }
+            `);
+        });
+
+        it("refuses an inherited rule with no start date", () => {
+            // The authored form makes DTSTART mandatory, so there is nowhere
+            // for a startless series to go. Failing here is better than filing
+            // it under a start date the plugin invented.
+            expect(() =>
+                parseEvent({
+                    title: "Test",
+                    allDay: true,
+                    type: "recurring",
+                    daysOfWeek: ["M"],
+                })
+            ).toThrow("A recurring event needs a start date");
+        });
+
+        it("prefers the authored block when a note carries both", () => {
+            // The block is what the plugin writes, so it is the newer of the
+            // two descriptions.
+            expect(
+                parseEvent({
+                    title: "Test",
+                    allDay: true,
+                    type: "recurring",
+                    daysOfWeek: ["M"],
+                    startRecur: "2023-01-05",
+                    recurring: { start: "2026-03-17", freq: "daily" },
+                })
+            ).toMatchInlineSnapshot(`
+                {
+                  "allDay": true,
+                  "recurring": {
+                    "freq": "daily",
+                    "start": "2026-03-17",
+                  },
                   "title": "Test",
                   "type": "recurring",
                 }

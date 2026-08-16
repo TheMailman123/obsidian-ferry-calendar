@@ -2,6 +2,7 @@ import { DateTime } from "luxon";
 import * as React from "react";
 import { useEffect, useRef, useState } from "react";
 import { CalendarInfo, FerryEvent } from "../../types";
+import { specFromWeekdays, weekdaysFromSpec } from "../../calendars/recurrence";
 
 function makeChangeListener<T>(
     setState: React.Dispatch<React.SetStateAction<T>>,
@@ -96,12 +97,18 @@ export const EditEvent = ({
     calendars,
     defaultCalendarIndex,
 }: EditEventProps) => {
+    // The event being edited may be half-built — the modal is opened on a
+    // selection as well as on an existing note — so the rule is read once and
+    // every field below defaults from it rather than re-narrowing the union.
+    const initialRecurrence =
+        initialEvent?.type === "recurring" ? initialEvent.recurring : undefined;
+
     const [date, setDate] = useState(
         initialEvent
             ? initialEvent.type === "single"
                 ? initialEvent.date
                 : initialEvent.type === "recurring"
-                ? initialEvent.startRecur
+                ? initialRecurrence?.start ?? ""
                 : initialEvent.type === "rrule"
                 ? initialEvent.startDate
                 : ""
@@ -128,11 +135,10 @@ export const EditEvent = ({
     const [isRecurring, setIsRecurring] = useState(
         initialEvent?.type === "recurring" || false
     );
-    const [endRecur, setEndRecur] = useState("");
+    const [endRecur, setEndRecur] = useState(initialRecurrence?.until ?? "");
 
     const [daysOfWeek, setDaysOfWeek] = useState<string[]>(
-        (initialEvent?.type === "recurring" ? initialEvent.daysOfWeek : []) ||
-            []
+        initialRecurrence ? weekdaysFromSpec(initialRecurrence) : []
     );
 
     const [allDay, setAllDay] = useState(initialEvent?.allDay || false);
@@ -171,17 +177,17 @@ export const EditEvent = ({
                 ...(isRecurring
                     ? {
                           type: "recurring",
-                          daysOfWeek: daysOfWeek as (
-                              | "U"
-                              | "M"
-                              | "T"
-                              | "W"
-                              | "R"
-                              | "F"
-                              | "S"
-                          )[],
-                          startRecur: date || undefined,
-                          endRecur: endRecur || undefined,
+                          // The weekday row still speaks the inherited codes,
+                          // so the authored block is built from them rather
+                          // than written directly. The date field is required
+                          // for a recurring event now: the block makes DTSTART
+                          // mandatory, and a series with no beginning has no
+                          // occurrences.
+                          recurring: specFromWeekdays(
+                              daysOfWeek,
+                              date,
+                              endRecur || undefined
+                          ),
                       }
                     : {
                           type: "single",
@@ -254,7 +260,7 @@ export const EditEvent = ({
                             type="date"
                             id="date"
                             value={date}
-                            required={!isRecurring}
+                            required
                             // @ts-ignore
                             onChange={makeChangeListener(setDate, (x) => x)}
                         />

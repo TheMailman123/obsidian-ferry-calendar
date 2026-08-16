@@ -2,6 +2,7 @@ import { TFile, TFolder } from "obsidian";
 import { EventPathLocation } from "../core/EventStore";
 import { ObsidianInterface } from "../ObsidianAdapter";
 import { FerryEvent, EventLocation, validateEvent } from "../types";
+import { replacedKeys, serializeEvent } from "../types/schema";
 import { EditableCalendar, EditableEventResponse } from "./EditableCalendar";
 import {
     basenameForEvent,
@@ -240,7 +241,10 @@ export default class FullNoteCalendar extends EditableCalendar {
     async createEvent(event: FerryEvent): Promise<EventLocation> {
         const basename = this.freeBasenameFor(this.directory, event);
         const path = `${this.directory}/${basename}.md`;
-        const file = await this.app.create(path, newFrontmatter(event));
+        const file = await this.app.create(
+            path,
+            newFrontmatter(serializeEvent(event))
+        );
         return { file, lineNumber: undefined };
     }
 
@@ -305,8 +309,11 @@ export default class FullNoteCalendar extends EditableCalendar {
         if (file.path !== newLocation.file.path) {
             await this.app.rename(file, newLocation.file.path);
         }
+        // Writing the event also retires the keys it has replaced, so a note
+        // never ends up carrying two descriptions of the same event.
+        const fields = serializeEvent(event);
         await this.app.rewrite(file, (page) =>
-            modifyFrontmatterString(page, event)
+            modifyFrontmatterString(page, fields, replacedKeys(fields))
         );
 
         return;

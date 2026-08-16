@@ -117,23 +117,13 @@ describe("basenameForEvent", () => {
             type: "recurring",
             title: "Gym",
             allDay: true,
-            daysOfWeek: ["T", "R"],
-            startRecur: "2026-03-17",
+            recurring: {
+                start: "2026-03-17",
+                freq: "weekly",
+                byDay: ["TU", "TH"],
+            },
         } as unknown as FerryEvent;
         expect(basenameForEvent(event)).toBe("20260317_Gym");
-    });
-
-    it("names an open-ended recurring master with no prefix", () => {
-        // The edit UI allows a recurring event with no start date, so there is
-        // no date to prefix with. Refusing to name it would block a flow that
-        // currently works.
-        const event = {
-            type: "recurring",
-            title: "Gym",
-            allDay: true,
-            daysOfWeek: ["T"],
-        } as unknown as FerryEvent;
-        expect(basenameForEvent(event)).toBe("Gym");
     });
 
     it("names an rrule event for its start date", () => {

@@ -1,5 +1,10 @@
 import { EventApi, EventInput } from "@fullcalendar/core";
 import { FerryEvent } from "../types";
+import {
+    RecurrenceSpec,
+    specFromWeekdays,
+    Weekday,
+} from "../calendars/recurrence";
 
 import { DateTime, Duration } from "luxon";
 import { rrulestr } from "rrule";
@@ -82,6 +87,49 @@ const combineDateTimeStrings = (date: string, time: string): string | null => {
 
 const DAYS = "UMTWRFS";
 
+/** FullCalendar weekday indices, keyed by the codes an authored rule uses. */
+const WEEKDAY_INDEX: Record<Weekday, number> = {
+    SU: 0,
+    MO: 1,
+    TU: 2,
+    WE: 3,
+    TH: 4,
+    FR: 5,
+    SA: 6,
+};
+
+/**
+ * The weekdays a rule falls on, as FullCalendar's `daysOfWeek` option wants
+ * them, or null if the rule cannot be said that way.
+ *
+ * A stopgap. FullCalendar's `daysOfWeek` expresses one rule only — weekly, on a
+ * set of weekdays — where the authored block can say `FREQ=MONTHLY;BYDAY=3FR`.
+ * Rules it cannot carry are refused here rather than approximated, because an
+ * approximated recurrence rule is not one wrong event but every occurrence of
+ * it. Compiling rules through `compileRecurrence` and handing them to the rrule
+ * plugin retires this entirely.
+ */
+function weeklyDaysOfWeek(spec: RecurrenceSpec): number[] | null {
+    const expressible =
+        spec.rrule === undefined &&
+        spec.freq === "weekly" &&
+        spec.count === undefined &&
+        (spec.interval === undefined || spec.interval === 1);
+    if (!expressible) {
+        return null;
+    }
+    if (spec.byDay !== undefined) {
+        return spec.byDay.map((day) => WEEKDAY_INDEX[day]);
+    }
+    // No BYDAY means the series repeats on DTSTART's own weekday. Luxon counts
+    // Monday as 1 and Sunday as 7; FullCalendar counts Sunday as 0.
+    const start = DateTime.fromISO(spec.start);
+    if (!start.isValid) {
+        return null;
+    }
+    return [start.weekday % 7];
+}
+
 export function dateEndpointsToFrontmatter(
     start: Date,
     end: Date,
@@ -113,11 +161,19 @@ export function toEventInput(
         allDay: frontmatter.allDay,
     };
     if (frontmatter.type === "recurring") {
+        const daysOfWeek = weeklyDaysOfWeek(frontmatter.recurring);
+        if (daysOfWeek === null) {
+            console.error(
+                `FC: '${frontmatter.title}' has a recurrence rule this view cannot render yet, so it has been left off the calendar.`,
+                frontmatter.recurring
+            );
+            return null;
+        }
         event = {
             ...event,
-            daysOfWeek: frontmatter.daysOfWeek.map((c) => DAYS.indexOf(c)),
-            startRecur: frontmatter.startRecur,
-            endRecur: frontmatter.endRecur,
+            daysOfWeek,
+            startRecur: frontmatter.recurring.start,
+            endRecur: frontmatter.recurring.until,
             extendedProps: { isTask: false },
         };
         if (!frontmatter.allDay) {
@@ -251,15 +307,15 @@ export function fromEventApi(event: EventApi): FerryEvent {
         ...(isRecurring
             ? {
                   type: "recurring",
-                  daysOfWeek: event.extendedProps.daysOfWeek.map(
-                      (i: number) => DAYS[i]
-                  ),
-                  startRecur:
+                  recurring: specFromWeekdays(
+                      event.extendedProps.daysOfWeek.map(
+                          (i: number) => DAYS[i]
+                      ),
                       event.extendedProps.startRecur &&
-                      getDate(event.extendedProps.startRecur),
-                  endRecur:
+                          getDate(event.extendedProps.startRecur),
                       event.extendedProps.endRecur &&
-                      getDate(event.extendedProps.endRecur),
+                          getDate(event.extendedProps.endRecur)
+                  ),
               }
             : {
                   type: "single",

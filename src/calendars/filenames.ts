@@ -172,17 +172,15 @@ export function datePrefix(
  *
  * For a single event that is the event's date. For a recurring event it is
  * DTSTART — the master is named for when the series begins, so masters sort
- * among themselves — which the current UI permits to be absent.
- *
- * @returns The date string, or null if the event has no start date at all.
+ * among themselves.
  */
-function startDateForEvent(event: FerryEvent): string | null {
+function startDateForEvent(event: FerryEvent): string {
     switch (event.type) {
         case undefined:
         case "single":
             return event.date;
         case "recurring":
-            return event.startRecur ?? null;
+            return event.recurring.start;
         case "rrule":
             return event.startDate;
     }
@@ -192,11 +190,13 @@ function startDateForEvent(event: FerryEvent): string | null {
  * The filename an event should have, without the `.md` extension and before
  * collision handling.
  *
+ * Every event has a start date to be named for, recurring ones included: the
+ * authored `recurring` block requires DTSTART, since a series with no beginning
+ * has no occurrences to generate.
+ *
  * @param event Event to name.
  * @param format Date format to render the prefix in.
- * @returns `<date>_TITLE_SLUG`, or a bare slug for a recurring event with no
- * DTSTART — there is no date to prefix with, and refusing to name it would
- * block creating a rule that the edit UI currently allows to be open-ended.
+ * @returns `<date>_TITLE_SLUG`.
  * @throws If the event has a start date that is not an ISO date. A note filed
  * under a date the plugin could not read would be a note filed under the wrong
  * date, which is worse than failing here.
@@ -207,9 +207,6 @@ export function basenameForEvent(
 ): string {
     const slug = slugifyTitle(event.title);
     const start = startDateForEvent(event);
-    if (start === null) {
-        return slug;
-    }
     const prefix = datePrefix(start, format);
     if (prefix === null) {
         throw new Error(
