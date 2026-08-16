@@ -1,6 +1,3 @@
-import { parseYaml } from "obsidian";
-import { FerryEvent } from "../types";
-
 /**
  * Writing an event back into the frontmatter of its note.
  *
@@ -69,16 +66,48 @@ function replaceFrontmatter(page: string, newFrontmatter: string): string {
 }
 
 /** A value that can appear on the right-hand side of a frontmatter key. */
-export type PrintableAtom = Array<number | string> | number | string | boolean;
+export type PrintableAtom =
+    | Array<number | string>
+    | number
+    | string
+    | boolean
+    | null
+    | PrintableBlock;
 
 /**
- * Render one frontmatter value.
+ * A nested mapping, written as an indented block.
  *
- * Arrays render in YAML's inline flow style, which keeps an event to one line
- * per field and so keeps the modify path — which works line by line — able to
- * find and replace a field it has already written.
+ * Recurrence is the reason this exists: a rule the user can read and correct by
+ * hand is worth more than one they have to decode, so `recurring:` is authored
+ * as a block of named fields rather than an opaque RRULE string.
  */
-function stringifyYamlAtom(v: PrintableAtom): string {
+export type PrintableBlock = { [key: string]: PrintableAtom | undefined };
+
+/**
+ * The fields to write into an event note's frontmatter.
+ *
+ * A record rather than `Partial<FerryEvent>`, because the frontmatter of a note
+ * is not the plugin's to define: the fields of an event are only some of the
+ * keys that may be in there, and this module has to be able to name the others
+ * in order to leave them alone.
+ */
+export type EventFrontmatter = PrintableBlock;
+
+/** How far one level of nesting indents. Two spaces, as Obsidian itself writes. */
+const INDENT = "  ";
+
+/** Whether a value is a nested mapping rather than a scalar or a list. */
+function isBlock(v: PrintableAtom): v is PrintableBlock {
+    return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Render one scalar or list frontmatter value.
+ *
+ * Lists render in YAML's inline flow style, which keeps them to a single line
+ * and so keeps them findable by the modify path.
+ */
+function stringifyYamlAtom(v: Exclude<PrintableAtom, PrintableBlock>): string {
     let result = "";
     if (Array.isArray(v)) {
         result += "[";
@@ -90,12 +119,85 @@ function stringifyYamlAtom(v: PrintableAtom): string {
     return result;
 }
 
-/** Render one `key: value` frontmatter line. */
-function stringifyYamlLine(
+/**
+ * Render one frontmatter entry — a key and its value.
+ *
+ * Scalars and lists occupy one line; a nested block occupies as many lines as
+ * it has fields, which is why the unit here is an entry rather than a line.
+ * Everything downstream has to treat a multi-line entry as indivisible.
+ *
+ * @param k Frontmatter key.
+ * @param v Value to render.
+ * @param depth Nesting level, controlling indentation. Callers start at 0.
+ */
+function stringifyYamlEntry(
     k: string | number | symbol,
-    v: PrintableAtom
+    v: PrintableAtom,
+    depth = 0
 ): string {
-    return `${String(k)}: ${stringifyYamlAtom(v)}`;
+    const pad = INDENT.repeat(depth);
+    if (isBlock(v)) {
+        const fields = Object.entries(v).filter(
+            ([, child]) => child !== undefined
+        );
+        if (fields.length === 0) {
+            // A block with no fields left would otherwise render as a bare
+            // `key:`, which reads back as null rather than as an empty mapping
+            // — a shape the schema would then have to guess at.
+            return `${pad}${String(k)}: {}`;
+        }
+        return [
+            `${pad}${String(k)}:`,
+            ...fields.map(([childKey, child]) =>
+                stringifyYamlEntry(childKey, child as PrintableAtom, depth + 1)
+            ),
+        ].join("\n");
+    }
+    return `${pad}${String(k)}: ${stringifyYamlAtom(v)}`;
+}
+
+/**
+ * A key in an existing frontmatter block, together with every line it spans.
+ *
+ * `key` is null for a line the plugin cannot interpret as `key: value` — a
+ * comment, say. Those are carried through untouched rather than dropped: the
+ * plugin owns the fields of an event, not the rest of the note's frontmatter.
+ */
+interface FrontmatterEntry {
+    key: string | null;
+    lines: string[];
+}
+
+/** A top-level `key:` line, capturing the key. */
+const KEY_LINE = /^([^\s#][^:]*):(?:\s|$)/;
+
+/**
+ * Split an existing frontmatter block into entries.
+ *
+ * A line at column zero opens an entry; indented lines below it are the body of
+ * a nested block and belong to that same entry. Blank lines are dropped, which
+ * is what the line-based version of this code did and what keeps a round-trip
+ * through the modify path from accumulating whitespace.
+ *
+ * @param lines Frontmatter body, already split on newlines and without its
+ * `---` fences.
+ */
+function groupEntries(lines: string[]): FrontmatterEntry[] {
+    const entries: FrontmatterEntry[] = [];
+    for (const line of lines) {
+        if (line.trim() === "") {
+            continue;
+        }
+        const indented = /^\s/.test(line);
+        const current = entries[entries.length - 1];
+        if (indented && current !== undefined) {
+            current.lines.push(line);
+            continue;
+        }
+        const match = KEY_LINE.exec(line);
+        entries.push({ key: match ? match[1] : null, lines: [line] });
+    }
+    return entries;
 }
 
 /**
@@ -106,12 +208,12 @@ function stringifyYamlLine(
  * `endTime` line at all.
  * @returns A complete frontmatter block, fences included.
  */
-export function newFrontmatter(fields: Partial<FerryEvent>): string {
+export function newFrontmatter(fields: EventFrontmatter): string {
     return (
         "---\n" +
         Object.entries(fields)
-            .filter(([_, v]) => v !== undefined)
-            .map(([k, v]) => stringifyYamlLine(k, v))
+            .filter(([, v]) => v !== undefined)
+            .map(([k, v]) => stringifyYamlEntry(k, v as PrintableAtom))
             .join("\n") +
         "\n---\n"
     );
@@ -125,58 +227,53 @@ export function newFrontmatter(fields: Partial<FerryEvent>): string {
  * modifications do not mention is passed through untouched — see the module
  * docstring for why that matters.
  *
+ * A key whose value is a nested block is replaced whole: the replacement is
+ * written in this module's own indentation, so hand-authored spacing survives
+ * only for as long as the field itself goes unedited.
+ *
  * @param page Contents of the markdown file.
  * @param modifications Fields to set. Undefined values are ignored, not
  * treated as deletions.
  * @returns The page with its frontmatter updated, adding a block if the note
  * had none.
- * @throws If a frontmatter line parses to more than one key, which would mean
- * the block is not the one-field-per-line shape this function can safely edit.
  */
 export function modifyFrontmatterString(
     page: string,
-    modifications: Partial<FerryEvent>
+    modifications: EventFrontmatter
 ): string {
+    const fields = modifications;
     const frontmatter = extractFrontmatter(page)?.split("\n");
     let newFrontmatter: string[] = [];
     if (!frontmatter) {
-        newFrontmatter = Object.entries(modifications)
-            .filter(([k, v]) => v !== undefined)
-            .map(([k, v]) => stringifyYamlLine(k, v));
+        newFrontmatter = Object.entries(fields)
+            .filter(([, v]) => v !== undefined)
+            .map(([k, v]) => stringifyYamlEntry(k, v as PrintableAtom));
         page = "\n" + page;
     } else {
-        const linesAdded: Set<string | number | symbol> = new Set();
-        // Modify rows in-place.
-        for (let i = 0; i < frontmatter.length; i++) {
-            const line: string = frontmatter[i];
-            const obj: Record<any, any> | null = parseYaml(line);
-            if (!obj) {
+        const written: Set<string> = new Set();
+        // Modify entries in place.
+        for (const entry of groupEntries(frontmatter)) {
+            if (entry.key === null) {
+                newFrontmatter.push(...entry.lines);
                 continue;
             }
-
-            const keys = Object.keys(obj) as [keyof FerryEvent];
-            if (keys.length !== 1) {
-                throw new Error("One YAML line parsed to multiple keys.");
-            }
-            const key = keys[0];
-            linesAdded.add(key);
-            const newVal: PrintableAtom | undefined = modifications[key];
+            written.add(entry.key);
+            const newVal = fields[entry.key];
             if (newVal !== undefined) {
-                newFrontmatter.push(stringifyYamlLine(key, newVal));
+                newFrontmatter.push(stringifyYamlEntry(entry.key, newVal));
             } else {
-                // Just push the old line if we don't have a modification.
-                newFrontmatter.push(line);
+                // Nothing to say about this key, so the note keeps what it had
+                // — every line of it, since the entry may be a nested block.
+                newFrontmatter.push(...entry.lines);
             }
         }
 
-        // Add all rows that were not originally in the frontmatter.
+        // Add all fields that were not originally in the frontmatter.
         newFrontmatter.push(
-            ...(Object.keys(modifications) as [keyof FerryEvent])
-                .filter((k) => !linesAdded.has(k))
-                .filter((k) => modifications[k] !== undefined)
-                .map((k) =>
-                    stringifyYamlLine(k, modifications[k] as PrintableAtom)
-                )
+            ...Object.keys(fields)
+                .filter((k) => !written.has(k))
+                .filter((k) => fields[k] !== undefined)
+                .map((k) => stringifyYamlEntry(k, fields[k] as PrintableAtom))
         );
     }
     return replaceFrontmatter(page, newFrontmatter.join("\n") + "\n");
