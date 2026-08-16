@@ -32,3 +32,8 @@ data.json
 # Planning doc: references private vault paths and real note contents.
 # Kept in the working copy for convenience, excluded from the public repo.
 PLANNING.md
+
+# Session handoff notes. Same reasons as PLANNING.md — they quote vault paths
+# and note titles — and kept in the working copy rather than a temp directory
+# because the last one was written to one and did not survive the session.
+HANDOFF.md
