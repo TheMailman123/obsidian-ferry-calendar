@@ -336,30 +336,6 @@ const LEGACY_WEEKDAYS: Record<string, Weekday> = {
     S: "SA",
 };
 
-/** The same bridge in the other direction, for the edit UI's weekday row. */
-const WEEKDAY_TO_LEGACY: Record<Weekday, string> = Object.fromEntries(
-    Object.entries(LEGACY_WEEKDAYS).map(([letter, code]) => [code, letter])
-) as Record<Weekday, string>;
-
-/**
- * The single-letter weekday codes for a rule.
- *
- * The inverse of `specFromWeekdays`, for the one caller that still needs it:
- * the edit modal's weekday row, which is written in the inherited codes. Lossy
- * in exactly the way that row is — a rule with no `byDay`, or one whose
- * repetition the row cannot express, comes back as no weekdays rather than as
- * an approximation of itself.
- *
- * @param spec Recurrence rule to read.
- * @returns Weekday letters, in the order the rule lists them.
- */
-export function weekdaysFromSpec(spec: RecurrenceSpec): string[] {
-    if (spec.byDay === undefined) {
-        return [];
-    }
-    return spec.byDay.map((day) => WEEKDAY_TO_LEGACY[day]);
-}
-
 /**
  * Upgrade the inherited `daysOfWeek` recurrence shape to an authored spec.
  *

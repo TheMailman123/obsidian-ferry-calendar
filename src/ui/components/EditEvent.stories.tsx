@@ -89,3 +89,36 @@ export const RecurringEvent: Story = () => (
         }}
     ></EventModal>
 );
+RecurringEvent.storyName = "Recurring Event / Weekly";
+
+export const RecurringEventBounded: Story = () => (
+    <EventModal
+        initialEvent={{
+            title: "Event title",
+            type: "recurring",
+            allDay: true,
+            recurring: {
+                start: new Date().toISOString().slice(0, 10),
+                freq: "monthly",
+                interval: 2,
+                count: 6,
+            },
+        }}
+    ></EventModal>
+);
+RecurringEventBounded.storyName = "Recurring Event / Every other month";
+
+export const RecurringEventCustomRule: Story = () => (
+    <EventModal
+        initialEvent={{
+            title: "Event title",
+            type: "recurring",
+            allDay: true,
+            recurring: {
+                start: new Date().toISOString().slice(0, 10),
+                rrule: "FREQ=MONTHLY;BYDAY=3FR",
+            },
+        }}
+    ></EventModal>
+);
+RecurringEventCustomRule.storyName = "Recurring Event / Hand-written rule";

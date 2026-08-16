@@ -2,7 +2,14 @@ import { DateTime } from "luxon";
 import * as React from "react";
 import { useEffect, useRef, useState } from "react";
 import { CalendarInfo, FerryEvent } from "../../types";
-import { specFromWeekdays, weekdaysFromSpec } from "../../calendars/recurrence";
+import {
+    FREQUENCIES,
+    Frequency,
+    isFrequency,
+    RecurrenceSpec,
+    Weekday,
+    WEEKDAYS,
+} from "../../calendars/recurrence";
 
 function makeChangeListener<T>(
     setState: React.Dispatch<React.SetStateAction<T>>,
@@ -12,10 +19,10 @@ function makeChangeListener<T>(
 }
 
 interface DayChoiceProps {
-    code: string;
+    code: Weekday;
     label: string;
     isSelected: boolean;
-    onClick: (code: string) => void;
+    onClick: (code: Weekday) => void;
 }
 const DayChoice = ({ code, label, isSelected, onClick }: DayChoiceProps) => (
     <button
@@ -40,30 +47,58 @@ const DayChoice = ({ code, label, isSelected, onClick }: DayChoiceProps) => (
     </button>
 );
 
-const DAY_MAP = {
-    U: "Sunday",
-    M: "Monday",
-    T: "Tuesday",
-    W: "Wednesday",
-    R: "Thursday",
-    F: "Friday",
-    S: "Saturday",
+/**
+ * The weekday buttons, in the order a calendar reads.
+ *
+ * Keyed by the RFC 5545 codes the authored rule is written in, so the row hands
+ * back a `byDay` directly rather than through a translation.
+ */
+const DAY_MAP: Record<Weekday, string> = {
+    SU: "Sunday",
+    MO: "Monday",
+    TU: "Tuesday",
+    WE: "Wednesday",
+    TH: "Thursday",
+    FR: "Friday",
+    SA: "Saturday",
 };
+
+/** Weekday buttons run Sunday-first, as the row has always been drawn. */
+const WEEKDAY_ORDER: Weekday[] = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+
+/** How a series is described as ending, which is the choice the user makes. */
+type EndMode = "never" | "count" | "until";
+
+/**
+ * Which ending a rule describes.
+ *
+ * `count` and `until` are mutually exclusive in the rule and in the form, so
+ * the radio group is the single place that decides between them.
+ */
+function endModeOf(spec: RecurrenceSpec | undefined): EndMode {
+    if (spec?.count !== undefined) {
+        return "count";
+    }
+    if (spec?.until !== undefined) {
+        return "until";
+    }
+    return "never";
+}
 
 const DaySelect = ({
     value: days,
     onChange,
 }: {
-    value: string[];
-    onChange: (days: string[]) => void;
+    value: Weekday[];
+    onChange: (days: Weekday[]) => void;
 }) => {
     return (
         <div>
-            {Object.entries(DAY_MAP).map(([code, label]) => (
+            {WEEKDAY_ORDER.map((code) => (
                 <DayChoice
                     key={code}
                     code={code}
-                    label={label}
+                    label={DAY_MAP[code]}
                     isSelected={days.includes(code)}
                     onClick={() =>
                         days.includes(code)
@@ -135,11 +170,24 @@ export const EditEvent = ({
     const [isRecurring, setIsRecurring] = useState(
         initialEvent?.type === "recurring" || false
     );
+    const [freq, setFreq] = useState<Frequency>(
+        initialRecurrence?.freq ?? "weekly"
+    );
+    const [interval, setInterval] = useState(initialRecurrence?.interval ?? 1);
+    const [byDay, setByDay] = useState<Weekday[]>(
+        initialRecurrence?.byDay ?? []
+    );
+    const [endMode, setEndMode] = useState<EndMode>(
+        endModeOf(initialRecurrence)
+    );
+    const [count, setCount] = useState(initialRecurrence?.count ?? 10);
     const [endRecur, setEndRecur] = useState(initialRecurrence?.until ?? "");
 
-    const [daysOfWeek, setDaysOfWeek] = useState<string[]>(
-        initialRecurrence ? weekdaysFromSpec(initialRecurrence) : []
-    );
+    // A rule written by hand in the note, which the structured fields cannot
+    // say. It is carried through untouched rather than edited here: rewriting
+    // `FREQ=MONTHLY;BYDAY=3FR` as whatever the form happens to hold would throw
+    // away the rule the user went to the trouble of writing.
+    const customRule = initialRecurrence?.rrule;
 
     const [allDay, setAllDay] = useState(initialEvent?.allDay || false);
 
@@ -177,17 +225,31 @@ export const EditEvent = ({
                 ...(isRecurring
                     ? {
                           type: "recurring",
-                          // The weekday row still speaks the inherited codes,
-                          // so the authored block is built from them rather
-                          // than written directly. The date field is required
-                          // for a recurring event now: the block makes DTSTART
-                          // mandatory, and a series with no beginning has no
-                          // occurrences.
-                          recurring: specFromWeekdays(
-                              daysOfWeek,
-                              date,
-                              endRecur || undefined
-                          ),
+                          recurring: {
+                              // DTSTART is mandatory — a series with no
+                              // beginning has no occurrences — and the form
+                              // requires the field for the same reason.
+                              start: date || "",
+                              ...(customRule !== undefined
+                                  ? { rrule: customRule }
+                                  : {
+                                        freq,
+                                        // An interval of 1 is the default, so
+                                        // writing it would only add a line to
+                                        // the note that says nothing.
+                                        ...(interval !== 1 ? { interval } : {}),
+                                        ...(freq === "weekly" &&
+                                        byDay.length > 0
+                                            ? { byDay }
+                                            : {}),
+                                        ...(endMode === "count"
+                                            ? { count }
+                                            : {}),
+                                        ...(endMode === "until"
+                                            ? { until: endRecur }
+                                            : {}),
+                                    }),
+                          },
                       }
                     : {
                           type: "single",
@@ -315,30 +377,131 @@ export const EditEvent = ({
 
                 {isRecurring && (
                     <>
-                        <DaySelect
-                            value={daysOfWeek}
-                            onChange={setDaysOfWeek}
-                        />
                         <p>
-                            Starts recurring
+                            <label htmlFor="startDate">Starts on </label>
                             <input
                                 type="date"
                                 id="startDate"
                                 value={date}
+                                required
                                 // @ts-ignore
                                 onChange={makeChangeListener(setDate, (x) => x)}
                             />
-                            and stops recurring
-                            <input
-                                type="date"
-                                id="endDate"
-                                value={endRecur}
-                                onChange={makeChangeListener(
-                                    setEndRecur,
-                                    (x) => x
-                                )}
-                            />
                         </p>
+
+                        {customRule !== undefined ? (
+                            <p>
+                                Repeats by the rule <code>{customRule}</code>,
+                                which is edited in the note itself.
+                            </p>
+                        ) : (
+                            <>
+                                <p>
+                                    <label htmlFor="interval">
+                                        Repeats every{" "}
+                                    </label>
+                                    <input
+                                        type="number"
+                                        id="interval"
+                                        min={1}
+                                        value={interval}
+                                        style={{ width: "4rem" }}
+                                        onChange={makeChangeListener(
+                                            setInterval,
+                                            (x) => Number(x)
+                                        )}
+                                    />
+                                    <select
+                                        id="freq"
+                                        value={freq}
+                                        onChange={makeChangeListener(
+                                            setFreq,
+                                            (x) =>
+                                                isFrequency(x) ? x : "weekly"
+                                        )}
+                                    >
+                                        {FREQUENCIES.map((f) => (
+                                            <option key={f} value={f}>
+                                                {f === "daily"
+                                                    ? "day"
+                                                    : f === "weekly"
+                                                    ? "week"
+                                                    : f === "monthly"
+                                                    ? "month"
+                                                    : "year"}
+                                                {interval === 1 ? "" : "s"}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </p>
+
+                                {freq === "weekly" && (
+                                    <DaySelect
+                                        value={byDay}
+                                        onChange={setByDay}
+                                    />
+                                )}
+
+                                <p>
+                                    <label>Ends </label>
+                                    <label htmlFor="endNever">
+                                        <input
+                                            type="radio"
+                                            id="endNever"
+                                            name="endMode"
+                                            checked={endMode === "never"}
+                                            onChange={() => setEndMode("never")}
+                                        />
+                                        never
+                                    </label>
+                                    <label htmlFor="endCount">
+                                        <input
+                                            type="radio"
+                                            id="endCount"
+                                            name="endMode"
+                                            checked={endMode === "count"}
+                                            onChange={() => setEndMode("count")}
+                                        />
+                                        after
+                                    </label>
+                                    <input
+                                        type="number"
+                                        id="count"
+                                        min={1}
+                                        value={count}
+                                        disabled={endMode !== "count"}
+                                        required={endMode === "count"}
+                                        style={{ width: "4rem" }}
+                                        onChange={makeChangeListener(
+                                            setCount,
+                                            (x) => Number(x)
+                                        )}
+                                    />
+                                    times
+                                    <label htmlFor="endUntil">
+                                        <input
+                                            type="radio"
+                                            id="endUntil"
+                                            name="endMode"
+                                            checked={endMode === "until"}
+                                            onChange={() => setEndMode("until")}
+                                        />
+                                        on
+                                    </label>
+                                    <input
+                                        type="date"
+                                        id="endDate"
+                                        value={endRecur}
+                                        disabled={endMode !== "until"}
+                                        required={endMode === "until"}
+                                        onChange={makeChangeListener(
+                                            setEndRecur,
+                                            (x) => x
+                                        )}
+                                    />
+                                </p>
+                            </>
+                        )}
                     </>
                 )}
                 <p>
