@@ -331,9 +331,16 @@ export class CalendarView extends ItemView {
             },
             modifyEvent: async (newEvent, oldEvent) => {
                 try {
+                    // The stored event is what a recurring one is edited
+                    // against: the view hands back a single occurrence, and a
+                    // rule rebuilt from that would not be the rule the user
+                    // wrote.
+                    const existing = this.plugin.cache.getEventById(
+                        oldEvent.id
+                    );
                     const didModify = await this.plugin.cache.updateEventWithId(
                         oldEvent.id,
-                        fromEventApi(newEvent)
+                        fromEventApi(newEvent, existing)
                     );
                     return !!didModify;
                 } catch (e: any) {

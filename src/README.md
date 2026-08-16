@@ -58,6 +58,10 @@ An event is one of three shapes: `single`, `recurring` (a `recurring:` block hol
 
 Translation between `FerryEvent` and `EventInput` is handled in `interop.ts`. Each `Calendar` subclass (see below) handles its own translation from its source format into `FerryEvent`.
 
+Both recurring shapes render through one path there: the authored block is compiled by `calendars/recurrence.ts` at the render boundary — never on read, or the first drag on an event would replace the rule the user wrote with an opaque `FREQ=WEEKLY;BYDAY=TU,TH` — and handed to FullCalendar's rrule plugin alongside the already-compiled form that ICS and derived calendars build. Rules that cannot be compiled leave their event off the calendar with an error, rather than rendering some resolution of the ambiguity across every occurrence of a series.
+
+**The timezone convention that path depends on: build DTSTART from UTC components, and read occurrences back as UTC.** The `rrule` package is not timezone-aware in the way the name suggests — it reads DTSTART's UTC components as a wall-clock time and answers in the same terms — so a DTSTART built from local midnight is a different day to it, and every occurrence comes back shifted. FullCalendar's own date markers are UTC-based in the same sense, which is why `ui/calendar.ts` patches the rrule plugin's expansion to convert *nothing*: the default sees the `Z` on our DTSTART, takes the rule to be written in a real timezone, and shifts both the window and every occurrence by the local offset. Any test that expands a rule has to pin its zone, or it will pass or fail according to where it runs; `ui/interop.test.ts` runs in Sydney for that reason.
+
 ### `core`
 
 The `core` directory consists of two classes, `EventStore` and `EventCache`. These two classes comprise the plugin's main event-managing logic.

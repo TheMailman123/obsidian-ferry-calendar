@@ -1,10 +1,6 @@
 import { EventApi, EventInput } from "@fullcalendar/core";
 import { FerryEvent } from "../types";
-import {
-    RecurrenceSpec,
-    specFromWeekdays,
-    Weekday,
-} from "../calendars/recurrence";
+import { compileRecurrence } from "../calendars/recurrence";
 
 import { DateTime, Duration } from "luxon";
 import { rrulestr } from "rrule";
@@ -36,18 +32,6 @@ const parseTime = (time: string): Duration | null => {
             includePrefix: false,
         })
     );
-};
-
-const normalizeTimeString = (time: string): string | null => {
-    const parsed = parseTime(time);
-    if (!parsed) {
-        return null;
-    }
-    return parsed.toISOTime({
-        suppressMilliseconds: true,
-        includePrefix: false,
-        suppressSeconds: true,
-    });
 };
 
 const add = (date: DateTime, time: Duration): DateTime => {
@@ -85,49 +69,90 @@ const combineDateTimeStrings = (date: string, time: string): string | null => {
     });
 };
 
-const DAYS = "UMTWRFS";
+/**
+ * DTSTART for a recurrence rule, in the terms the `rrule` package reads.
+ *
+ * That package takes the **UTC components** of DTSTART as a wall-clock time and
+ * answers in the same terms, so the date and time as the user wrote them are
+ * assembled in UTC and handed over unconverted. Building this from the local
+ * zone instead is the mistake the whole module has to avoid: Sydney midnight is
+ * 13:00Z the day before, and every occurrence of the series then comes back a
+ * day early.
+ *
+ * @param date Start date, ISO `YYYY-MM-DD`.
+ * @param time Start time, or null for an all-day event.
+ * @returns The date, or null if either half was unreadable — in which case the
+ * event does not render at all, rather than rendering on the wrong day.
+ */
+function dtstartFromWallClock(date: string, time: string | null): Date | null {
+    const day = DateTime.fromISO(date, { zone: "utc" });
+    if (!day.isValid) {
+        console.error(
+            `FC: Error parsing start date '${date}': ${day.invalidReason}`
+        );
+        return null;
+    }
+    if (time === null) {
+        return day.toJSDate();
+    }
+    const parsed = parseTime(time);
+    if (!parsed) {
+        return null;
+    }
+    return day.plus(parsed).toJSDate();
+}
 
-/** FullCalendar weekday indices, keyed by the codes an authored rule uses. */
-const WEEKDAY_INDEX: Record<Weekday, number> = {
-    SU: 0,
-    MO: 1,
-    TU: 2,
-    WE: 3,
-    TH: 4,
-    FR: 5,
-    SA: 6,
-};
+/** A rule to expand, however the event happened to express it. */
+interface Recurrence {
+    /** RRULE string, without DTSTART. */
+    rule: string;
+    /** The day the series begins. */
+    startDate: string;
+    /** Dates whose occurrence is cancelled. */
+    skipDates: string[];
+}
 
 /**
- * The weekdays a rule falls on, as FullCalendar's `daysOfWeek` option wants
- * them, or null if the rule cannot be said that way.
+ * The rule an event repeats by.
  *
- * A stopgap. FullCalendar's `daysOfWeek` expresses one rule only — weekly, on a
- * set of weekdays — where the authored block can say `FREQ=MONTHLY;BYDAY=3FR`.
- * Rules it cannot carry are refused here rather than approximated, because an
- * approximated recurrence rule is not one wrong event but every occurrence of
- * it. Compiling rules through `compileRecurrence` and handing them to the rrule
- * plugin retires this entirely.
+ * Both recurring shapes converge here: `recurring` is the block as authored in
+ * a note, compiled on the way past, and `rrule` is the already-compiled form
+ * that ICS and derived calendars build internally. Compiling at the render
+ * boundary rather than on read is what keeps the authored block in the file —
+ * a note read and written back would otherwise have its rule replaced by an
+ * opaque `FREQ=WEEKLY;BYDAY=TU,TH`.
+ *
+ * @returns The rule, or null if the authored block does not describe one.
+ * `compileRecurrence` refuses rules it cannot read rather than resolving them,
+ * since a wrong rule is not one wrong event but every occurrence of it.
  */
-function weeklyDaysOfWeek(spec: RecurrenceSpec): number[] | null {
-    const expressible =
-        spec.rrule === undefined &&
-        spec.freq === "weekly" &&
-        spec.count === undefined &&
-        (spec.interval === undefined || spec.interval === 1);
-    if (!expressible) {
-        return null;
+function recurrenceOf(frontmatter: FerryEvent): Recurrence | null {
+    if (frontmatter.type === "rrule") {
+        return {
+            rule: frontmatter.rrule,
+            startDate: frontmatter.startDate,
+            skipDates: frontmatter.skipDates,
+        };
     }
-    if (spec.byDay !== undefined) {
-        return spec.byDay.map((day) => WEEKDAY_INDEX[day]);
+    if (frontmatter.type === "recurring") {
+        try {
+            return {
+                rule: compileRecurrence(frontmatter.recurring),
+                startDate: frontmatter.recurring.start,
+                skipDates: frontmatter.skipDates ?? [],
+            };
+        } catch (e) {
+            console.error(
+                `FC: '${
+                    frontmatter.title
+                }' has a recurrence rule that cannot be compiled, so it has been left off the calendar: ${
+                    e instanceof Error ? e.message : String(e)
+                }`
+            );
+            return null;
+        }
     }
-    // No BYDAY means the series repeats on DTSTART's own weekday. Luxon counts
-    // Monday as 1 and Sunday as 7; FullCalendar counts Sunday as 0.
-    const start = DateTime.fromISO(spec.start);
-    if (!start.isValid) {
-        return null;
-    }
-    return [start.weekday % 7];
+    return null;
 }
 
 export function dateEndpointsToFrontmatter(
@@ -160,78 +185,45 @@ export function toEventInput(
         title: frontmatter.title,
         allDay: frontmatter.allDay,
     };
-    if (frontmatter.type === "recurring") {
-        const daysOfWeek = weeklyDaysOfWeek(frontmatter.recurring);
-        if (daysOfWeek === null) {
-            console.error(
-                `FC: '${frontmatter.title}' has a recurrence rule this view cannot render yet, so it has been left off the calendar.`,
-                frontmatter.recurring
-            );
+    if (frontmatter.type === "recurring" || frontmatter.type === "rrule") {
+        const recurrence = recurrenceOf(frontmatter);
+        if (recurrence === null) {
             return null;
         }
-        event = {
-            ...event,
-            daysOfWeek,
-            startRecur: frontmatter.recurring.start,
-            endRecur: frontmatter.recurring.until,
-            extendedProps: { isTask: false },
-        };
-        if (!frontmatter.allDay) {
-            event = {
-                ...event,
-                startTime: normalizeTimeString(frontmatter.startTime || ""),
-                endTime: frontmatter.endTime
-                    ? normalizeTimeString(frontmatter.endTime)
-                    : undefined,
-            };
-        }
-    } else if (frontmatter.type === "rrule") {
-        const dtstart = (() => {
-            if (frontmatter.allDay) {
-                return DateTime.fromISO(frontmatter.startDate);
-            } else {
-                const dtstartStr = combineDateTimeStrings(
-                    frontmatter.startDate,
-                    frontmatter.startTime
-                );
-
-                if (!dtstartStr) {
-                    return null;
-                }
-                return DateTime.fromISO(dtstartStr);
-            }
-        })();
+        const dtstart = dtstartFromWallClock(
+            recurrence.startDate,
+            frontmatter.allDay ? null : frontmatter.startTime
+        );
         if (dtstart === null) {
             return null;
         }
-        // NOTE: how exdates are handled does not support events which recur more than once per day.
-        const exdate = frontmatter.skipDates
-            .map((d) => {
-                // Can't do date arithmetic because timezone might change for different exdates due to DST.
-                // RRule only has one dtstart that doesn't know about DST/timezone changes.
-                // Therefore, just concatenate the date for this exdate and the start time for the event together.
-                const date = DateTime.fromISO(d).toISODate();
-                const time = dtstart.toJSDate().toISOString().split("T")[1];
 
-                return `${date}T${time}`;
-            })
-            .flatMap((d) => (d ? d : []));
+        // An exdate cancels an occurrence only by matching it exactly, and
+        // occurrences carry their time in UTC components — so the skipped date
+        // is joined to the rule's own start time, read back the same way.
+        // NOTE: this does not support events which recur more than once a day.
+        const startTime = DateTime.fromJSDate(dtstart, {
+            zone: "utc",
+        }).toFormat("HH:mm:ss");
+        const exdate = recurrence.skipDates.flatMap((d) => {
+            const date = DateTime.fromISO(d).toISODate();
+            return date ? [`${date}T${startTime}`] : [];
+        });
 
         event = {
             id,
             title: frontmatter.title,
             allDay: frontmatter.allDay,
-            rrule: rrulestr(frontmatter.rrule, {
-                dtstart: dtstart.toJSDate(),
-            }).toString(),
+            rrule: rrulestr(recurrence.rule, { dtstart }).toString(),
             exdate,
+            extendedProps: { isTask: false },
         };
 
         if (!frontmatter.allDay) {
-            const startTime = parseTime(frontmatter.startTime);
-            if (startTime && frontmatter.endTime) {
-                const endTime = parseTime(frontmatter.endTime);
-                const duration = endTime?.minus(startTime);
+            const start = parseTime(frontmatter.startTime);
+            if (start && frontmatter.endTime) {
+                const end = parseTime(frontmatter.endTime);
+                const duration = end?.minus(start);
                 if (duration) {
                     event.duration = duration.toISOTime({
                         includePrefix: false,
@@ -290,38 +282,45 @@ export function toEventInput(
     return event;
 }
 
-export function fromEventApi(event: EventApi): FerryEvent {
-    const isRecurring: boolean = event.extendedProps.daysOfWeek !== undefined;
+/**
+ * Read an event back out of the calendar after it has been dragged or resized.
+ *
+ * @param event The occurrence as the view now has it.
+ * @param existing The event as it is stored, when the caller has it. Required
+ * to edit a recurring event: the view hands back one occurrence of a series,
+ * and a rule derived from a single occurrence would be a different rule. The
+ * stored one is kept and only the time of day it happens at is taken from the
+ * drag, which is what dragging a recurring event has always done here.
+ * @returns The event to write back.
+ */
+export function fromEventApi(
+    event: EventApi,
+    existing: FerryEvent | null = null
+): FerryEvent {
     const startDate = getDate(event.start as Date);
     const endDate = getDate(event.end as Date);
+    const time = event.allDay
+        ? ({ allDay: true } as const)
+        : ({
+              allDay: false,
+              startTime: getTime(event.start as Date),
+              endTime: getTime(event.end as Date),
+          } as const);
+
+    if (existing?.type === "recurring") {
+        // Moving an occurrence to another day is a per-instance edit, which
+        // needs the "this event / this and following / all events" prompt to
+        // mean anything, so for now the series keeps its rule and the day is
+        // left where the rule puts it.
+        return { ...existing, ...time };
+    }
+
     return {
         title: event.title,
-        ...(event.allDay
-            ? { allDay: true }
-            : {
-                  allDay: false,
-                  startTime: getTime(event.start as Date),
-                  endTime: getTime(event.end as Date),
-              }),
-
-        ...(isRecurring
-            ? {
-                  type: "recurring",
-                  recurring: specFromWeekdays(
-                      event.extendedProps.daysOfWeek.map(
-                          (i: number) => DAYS[i]
-                      ),
-                      event.extendedProps.startRecur &&
-                          getDate(event.extendedProps.startRecur),
-                      event.extendedProps.endRecur &&
-                          getDate(event.extendedProps.endRecur)
-                  ),
-              }
-            : {
-                  type: "single",
-                  date: startDate,
-                  ...(startDate !== endDate ? { endDate } : { endDate: null }),
-                  completed: event.extendedProps.taskCompleted,
-              }),
+        ...time,
+        type: "single",
+        date: startDate,
+        ...(startDate !== endDate ? { endDate } : { endDate: null }),
+        completed: event.extendedProps.taskCompleted,
     };
 }

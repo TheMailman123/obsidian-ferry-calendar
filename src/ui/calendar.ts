@@ -16,23 +16,28 @@ import interactionPlugin from "@fullcalendar/interaction";
 import googleCalendarPlugin from "@fullcalendar/google-calendar";
 import iCalendarPlugin from "@fullcalendar/icalendar";
 
-// There is an issue with FullCalendar RRule support around DST boundaries which is fixed by this monkeypatch:
-// https://github.com/fullcalendar/fullcalendar/issues/5273#issuecomment-1360459342
-rrulePlugin.recurringTypes[0].expand = function (errd, fr, de) {
-    const hours = errd.rruleSet._dtstart.getHours();
-    return errd.rruleSet
-        .between(de.toDate(fr.start), de.toDate(fr.end), true)
-        .map((d: Date) => {
-            return new Date(
-                Date.UTC(
-                    d.getFullYear(),
-                    d.getMonth(),
-                    d.getDate(),
-                    hours,
-                    d.getMinutes()
-                )
-            );
-        });
+/*
+ * Expand recurrence rules in the terms the rest of the plugin writes them in.
+ *
+ * DTSTART is built from UTC components as a wall-clock time — see the
+ * convention in `calendars/recurrence.ts`, which `interop.ts` is bound by — and
+ * the occurrences the `rrule` package returns carry their answer the same way.
+ * FullCalendar's own date markers are UTC-based in exactly that sense too, so
+ * the two already agree and the rendered range can be passed straight through.
+ *
+ * The plugin's default expansion does not do that. Seeing the `Z` on our
+ * DTSTART, it takes the rule to be written in a real timezone and converts both
+ * the window and every occurrence between marker time and local time — a shift
+ * of the local offset, and the DST bug in fullcalendar#5273: an occurrence an
+ * hour out, or a day out, on the far side of a boundary. Converting nothing is
+ * the fix, not converting more carefully.
+ *
+ * This is the whole of the patch. If it ever needs to grow, the reason will be
+ * that something upstream has stopped honouring the convention above; fix that
+ * instead.
+ */
+rrulePlugin.recurringTypes[0].expand = function (errd, framingRange) {
+    return errd.rruleSet.between(framingRange.start, framingRange.end, true);
 };
 
 interface ExtraRenderProps {
