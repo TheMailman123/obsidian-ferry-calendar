@@ -10,6 +10,7 @@ import {
     DEFAULT_FILENAME_DATE_FORMAT,
     disambiguate,
     FilenameDateFormat,
+    folderForEvent,
     RECURRING_DIR,
 } from "./filenames";
 import {
@@ -188,13 +189,6 @@ export default class FullNoteCalendar extends EditableCalendar {
     }
 
     /**
-     * Write a new event out to its own note.
-     *
-     * Two events on the same day with the same title are legitimate, so a name
-     * that is already taken picks up a `_2`, `_3` suffix rather than refusing
-     * the create.
-     */
-    /**
      * Work out which of this calendar's notes have filenames that disagree
      * with their frontmatter.
      *
@@ -260,9 +254,43 @@ export default class FullNoteCalendar extends EditableCalendar {
         return applied;
     }
 
+    /**
+     * Make sure a folder exists before a note is written into it.
+     *
+     * `_recurring/` is created when the first master needs it rather than when
+     * the calendar is configured: a calendar that never has a recurring event
+     * should not grow an empty folder in someone's vault.
+     *
+     * @throws If a file is sitting where the folder needs to be. Writing the
+     * master somewhere else instead would put it where `getEvents` reads
+     * ordinary events, and it would render on the day of its DTSTART only.
+     */
+    private async ensureFolder(path: string): Promise<void> {
+        const existing = this.app.getAbstractFileByPath(path);
+        if (existing instanceof TFolder) {
+            return;
+        }
+        if (existing) {
+            throw new Error(
+                `Cannot create the folder ${path}: a file is already there.`
+            );
+        }
+        await this.app.createFolder(path);
+    }
+
+    /**
+     * Write a new event out to its own note.
+     *
+     * A recurring event's note is a master and goes to `_recurring/`, which is
+     * created here if this is the first one. Two events on the same day with
+     * the same title are legitimate, so a name that is already taken picks up a
+     * `_2`, `_3` suffix rather than refusing the create.
+     */
     async createEvent(event: FerryEvent): Promise<EventLocation> {
-        const basename = this.freeBasenameFor(this.directory, event);
-        const path = `${this.directory}/${basename}.md`;
+        const folder = folderForEvent(this.directory, event);
+        await this.ensureFolder(folder);
+        const basename = this.freeBasenameFor(folder, event);
+        const path = `${folder}/${basename}.md`;
         const file = await this.app.create(
             path,
             newFrontmatter(serializeEvent(event))
@@ -277,6 +305,12 @@ export default class FullNoteCalendar extends EditableCalendar {
      * changes the filename derived from it. A name that already carries a
      * collision suffix is left alone: `_2` is a name the plugin assigned
      * itself, not drift to be corrected.
+     *
+     * The folder is derived the same way, so an event that becomes recurring —
+     * or stops being — moves between the calendar's folder and `_recurring/`.
+     * A note crossing folders gives up any collision suffix it was carrying and
+     * takes whatever name is free where it lands, since the suffix answers a
+     * question about the folder it is leaving.
      */
     getNewLocation(
         location: EventPathLocation,
@@ -300,11 +334,13 @@ export default class FullNoteCalendar extends EditableCalendar {
             throw new Error(`File ${path} has no parent folder.`);
         }
 
-        const folder = file.parent.path;
+        const folder = folderForEvent(this.directory, event);
+        const staying = folder === file.parent.path;
         const expected = basenameForEvent(event, this.dateFormat);
-        const basename = basenameMatchesEvent(file.basename, expected)
-            ? file.basename
-            : this.freeBasenameFor(folder, event, file.path);
+        const basename =
+            staying && basenameMatchesEvent(file.basename, expected)
+                ? file.basename
+                : this.freeBasenameFor(folder, event, file.path);
 
         return {
             file: { path: `${folder}/${basename}.md` },
@@ -329,6 +365,9 @@ export default class FullNoteCalendar extends EditableCalendar {
         updateCacheWithLocation(newLocation);
 
         if (file.path !== newLocation.file.path) {
+            // The move may be into `_recurring/`, which nothing has needed
+            // until now if this is the calendar's first recurring event.
+            await this.ensureFolder(folderForEvent(this.directory, event));
             await this.app.rename(file, newLocation.file.path);
         }
         // Writing the event also retires the keys it has replaced, so a note
@@ -359,9 +398,17 @@ export default class FullNoteCalendar extends EditableCalendar {
         if (!file) {
             throw new Error(`File ${path} not found.`);
         }
+        // A master has to land in the destination's `_recurring/`, not beside
+        // its dated notes, so the event is read back out of the note to find
+        // out which it is. A note that no longer parses keeps the folder it
+        // would have had before, which is where it already lives.
+        const [master] = await this.getEventsInFile(file);
+        const destDir = master
+            ? folderForEvent(toCalendar.directory, master[0])
+            : toCalendar.directory;
+        await this.ensureFolder(destDir);
         // The name is already correct for the event; it just has to be free in
         // the folder it is landing in, where an unrelated note may hold it.
-        const destDir = toCalendar.directory;
         const basename = disambiguate(file.basename, (name) =>
             this.isTaken(destDir, name)
         );

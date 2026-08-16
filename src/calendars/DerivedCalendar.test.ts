@@ -28,6 +28,7 @@ const makeApp = (app: MockApp): ObsidianInterface => ({
         ),
     read: (file) => app.vault.read(file),
     create: jest.fn(),
+    createFolder: jest.fn(),
     rewrite: jest.fn(),
     rename: jest.fn(),
     delete: jest.fn(),

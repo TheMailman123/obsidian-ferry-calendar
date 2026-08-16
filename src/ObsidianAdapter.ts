@@ -57,6 +57,13 @@ export interface ObsidianInterface {
     create(path: string, contents: string): Promise<TFile>;
 
     /**
+     * Create a folder, including any missing folders above it.
+     *
+     * @param path path to create the folder at.
+     */
+    createFolder(path: string): Promise<void>;
+
+    /**
      * Rewrite the given file. This API does not directly expose a "write" function
      * to ensure that a file is read from disk directly before it is written to.
      *
@@ -150,6 +157,10 @@ export class ObsidianIO implements ObsidianInterface {
 
     create(path: string, contents: string): Promise<TFile> {
         return this.vault.create(path, contents);
+    }
+
+    async createFolder(path: string): Promise<void> {
+        await this.vault.createFolder(path);
     }
 
     getAbstractFileByPath(path: string): TAbstractFile | null {

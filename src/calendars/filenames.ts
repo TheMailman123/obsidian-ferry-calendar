@@ -219,6 +219,23 @@ export function basenameForEvent(
 }
 
 /**
+ * The folder inside a working calendar where an event's note belongs.
+ *
+ * Recurrence masters live in `_recurring/` and everything else sits directly in
+ * the calendar's own folder. Keeping the masters apart is what stops a rule
+ * being read as an ordinary event on the day its DTSTART falls, and the leading
+ * underscore sorts them above the dated notes in the file explorer.
+ *
+ * @param directory The calendar's folder.
+ * @param event Event to place.
+ */
+export function folderForEvent(directory: string, event: FerryEvent): string {
+    return event.type === "recurring"
+        ? `${directory}/${RECURRING_DIR}`
+        : directory;
+}
+
+/**
  * The full filename an event should have, before collision handling.
  */
 export function filenameForEvent(

@@ -28,6 +28,7 @@ const makeApp = (app: MockApp): ObsidianInterface => ({
         ),
     read: (file) => app.vault.read(file),
     create: jest.fn(),
+    createFolder: jest.fn(),
     rewrite: jest.fn(),
     rename: jest.fn(),
     delete: jest.fn(),
@@ -425,7 +426,7 @@ describe("Note Calendar Tests", () => {
         );
 
         const [path, contents] = (obsidian.create as jest.Mock).mock.calls[0];
-        expect(path).toBe("events/20260317_Gym.md");
+        expect(path).toBe(`${dirName}/${RECURRING_DIR}/20260317_Gym.md`);
         expect(contents).toMatchInlineSnapshot(`
             "---
             title: Gym
@@ -440,6 +441,138 @@ describe("Note Calendar Tests", () => {
             ---
             "
         `);
+    });
+
+    it("files a new master in _recurring/, creating the folder", async () => {
+        const obsidian = makeApp(
+            MockAppBuilder.make().folder(new MockAppBuilder(dirName)).done()
+        );
+        const calendar = new FullNoteCalendar(obsidian, color, dirName);
+        (obsidian.create as jest.Mock).mockReturnValue({
+            path: join(dirName, RECURRING_DIR, "20260317_Gym.md"),
+        });
+
+        await calendar.createEvent(
+            parseEvent({
+                title: "Gym",
+                allDay: true,
+                recurring: { start: "2026-03-17", freq: "weekly" },
+            })
+        );
+
+        expect(obsidian.createFolder).toHaveBeenCalledWith(
+            `${dirName}/${RECURRING_DIR}`
+        );
+        expect((obsidian.create as jest.Mock).mock.calls[0][0]).toBe(
+            `${dirName}/${RECURRING_DIR}/20260317_Gym.md`
+        );
+    });
+
+    it("leaves a single event out of _recurring/", async () => {
+        const obsidian = makeApp(
+            MockAppBuilder.make().folder(new MockAppBuilder(dirName)).done()
+        );
+        const calendar = new FullNoteCalendar(obsidian, color, dirName);
+        (obsidian.create as jest.Mock).mockReturnValue({
+            path: join(dirName, "20220101_Test_Event.md"),
+        });
+
+        await calendar.createEvent(
+            parseEvent({
+                title: "Test Event",
+                allDay: true,
+                date: "2022-01-01",
+            })
+        );
+
+        // The folder is made when the first master needs it, not when a
+        // calendar is configured.
+        expect(obsidian.createFolder).not.toHaveBeenCalled();
+        expect((obsidian.create as jest.Mock).mock.calls[0][0]).toBe(
+            `${dirName}/20220101_Test_Event.md`
+        );
+    });
+
+    it("moves a note into _recurring/ when its event becomes recurring", async () => {
+        const filename = "20260317_Gym.md";
+        const obsidian = makeApp(
+            MockAppBuilder.make()
+                .folder(
+                    new MockAppBuilder(dirName).file(
+                        filename,
+                        new FileBuilder().frontmatter({
+                            title: "Gym",
+                            allDay: true,
+                            date: "2026-03-17",
+                        })
+                    )
+                )
+                .done()
+        );
+        const calendar = new FullNoteCalendar(obsidian, color, dirName);
+
+        const event = parseEvent({
+            title: "Gym",
+            allDay: true,
+            recurring: { start: "2026-03-17", freq: "weekly" },
+        });
+        const location = calendar.getNewLocation(
+            { path: join(dirName, filename), lineNumber: undefined },
+            event
+        );
+        expect(location.file.path).toBe(
+            `${dirName}/${RECURRING_DIR}/${filename}`
+        );
+
+        await calendar.modifyEvent(
+            { path: join(dirName, filename), lineNumber: undefined },
+            event,
+            jest.fn()
+        );
+        expect(obsidian.createFolder).toHaveBeenCalledWith(
+            `${dirName}/${RECURRING_DIR}`
+        );
+        expect(obsidian.rename).toHaveBeenCalledWith(
+            expect.anything(),
+            `${dirName}/${RECURRING_DIR}/${filename}`
+        );
+    });
+
+    it("moves a master back out when its event stops recurring", async () => {
+        const filename = "20260317_Gym.md";
+        const obsidian = makeApp(
+            MockAppBuilder.make()
+                .folder(
+                    new MockAppBuilder(dirName).folder(
+                        new MockAppBuilder(RECURRING_DIR).file(
+                            filename,
+                            new FileBuilder().frontmatter({
+                                title: "Gym",
+                                allDay: true,
+                                recurring: {
+                                    start: "2026-03-17",
+                                    freq: "weekly",
+                                },
+                            })
+                        )
+                    )
+                )
+                .done()
+        );
+        const calendar = new FullNoteCalendar(obsidian, color, dirName);
+
+        const location = calendar.getNewLocation(
+            {
+                path: join(dirName, RECURRING_DIR, filename),
+                lineNumber: undefined,
+            },
+            parseEvent({
+                title: "Gym",
+                allDay: true,
+                date: "2026-03-17",
+            })
+        );
+        expect(location.file.path).toBe(`${dirName}/${filename}`);
     });
 
     it("retires the inherited recurrence keys when it writes", async () => {
