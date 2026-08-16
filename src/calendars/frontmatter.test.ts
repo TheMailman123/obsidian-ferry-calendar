@@ -291,3 +291,86 @@ describe("nested blocks", () => {
         );
     });
 });
+
+describe("removing keys", () => {
+    it("drops a key and leaves the rest in place", () => {
+        const page = [
+            "---",
+            "title: Gym",
+            "daysOfWeek: [T,R]",
+            "startTime: 06:30",
+            "---",
+            "",
+        ].join("\n");
+        expect(modifyFrontmatterString(page, {}, ["daysOfWeek"])).toBe(
+            ["---", "title: Gym", "startTime: 06:30", "---", ""].join("\n")
+        );
+    });
+
+    it("drops a nested block along with its body", () => {
+        const page = [
+            "---",
+            "title: Gym",
+            "recurring:",
+            "  start: 2026-03-17",
+            "  freq: weekly",
+            "id: abc",
+            "---",
+            "",
+        ].join("\n");
+        expect(modifyFrontmatterString(page, {}, ["recurring"])).toBe(
+            ["---", "title: Gym", "id: abc", "---", ""].join("\n")
+        );
+    });
+
+    it("rewrites one shape into another in a single pass", () => {
+        // What upgrading an inherited event looks like: the authored block
+        // arrives and the keys it replaces leave, so the note is never left
+        // holding two descriptions of the same recurrence.
+        const page = [
+            "---",
+            "title: Gym",
+            "type: recurring",
+            "daysOfWeek: [T,R]",
+            "startRecur: 2026-03-17",
+            "---",
+            "",
+        ].join("\n");
+        expect(
+            modifyFrontmatterString(
+                page,
+                {
+                    recurring: {
+                        start: "2026-03-17",
+                        freq: "weekly",
+                        byDay: ["TU", "TH"],
+                    },
+                },
+                ["type", "daysOfWeek", "startRecur"]
+            )
+        ).toBe(
+            [
+                "---",
+                "title: Gym",
+                "recurring:",
+                "  start: 2026-03-17",
+                "  freq: weekly",
+                "  byDay: [TU,TH]",
+                "---",
+                "",
+            ].join("\n")
+        );
+    });
+
+    it("ignores a key the note does not have", () => {
+        const page = ["---", "title: Gym", "---", ""].join("\n");
+        expect(modifyFrontmatterString(page, {}, ["daysOfWeek"])).toBe(page);
+    });
+
+    it("refuses to both write and remove the same key", () => {
+        const page = ["---", "title: Gym", "---", ""].join("\n");
+        expect(() =>
+            modifyFrontmatterString(page, { title: "Gym" }, ["title"])
+        ).toThrow("being both written and removed");
+    });
+});

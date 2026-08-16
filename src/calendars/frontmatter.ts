@@ -231,17 +231,40 @@ export function newFrontmatter(fields: EventFrontmatter): string {
  * written in this module's own indentation, so hand-authored spacing survives
  * only for as long as the field itself goes unedited.
  *
+ * Deleting a key is a separate argument rather than a value, because there is
+ * no value that could mean it: `undefined` has to keep meaning "this event does
+ * not have that field, leave the note's copy alone", or every write would strip
+ * whatever the schema does not model. Deletion is for the case where the plugin
+ * knows a key is obsolete — the inherited `daysOfWeek` shape, once its event has
+ * been rewritten as a `recurring:` block — and leaving both on disk would give
+ * the note two answers to the same question.
+ *
  * @param page Contents of the markdown file.
  * @param modifications Fields to set. Undefined values are ignored, not
  * treated as deletions.
+ * @param remove Keys to drop from the note entirely, along with every line they
+ * span. A key that is not there is not an error; a key that is also being set
+ * is.
  * @returns The page with its frontmatter updated, adding a block if the note
  * had none.
+ * @throws If a key appears in both `modifications` and `remove`, which is a
+ * caller that has not decided what it wants.
  */
 export function modifyFrontmatterString(
     page: string,
-    modifications: EventFrontmatter
+    modifications: EventFrontmatter,
+    remove: readonly string[] = []
 ): string {
     const fields = modifications;
+    const contradictory = remove.filter((k) => fields[k] !== undefined);
+    if (contradictory.length > 0) {
+        throw new Error(
+            `Frontmatter keys ${contradictory.join(
+                ", "
+            )} are being both written and removed.`
+        );
+    }
+    const dropped = new Set(remove);
     const frontmatter = extractFrontmatter(page)?.split("\n");
     let newFrontmatter: string[] = [];
     if (!frontmatter) {
@@ -255,6 +278,11 @@ export function modifyFrontmatterString(
         for (const entry of groupEntries(frontmatter)) {
             if (entry.key === null) {
                 newFrontmatter.push(...entry.lines);
+                continue;
+            }
+            if (dropped.has(entry.key)) {
+                // Every line of the entry goes, which for a nested block is the
+                // block and its whole body.
                 continue;
             }
             written.add(entry.key);
