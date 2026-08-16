@@ -10,6 +10,7 @@ import {
     DEFAULT_FILENAME_DATE_FORMAT,
     disambiguate,
     FilenameDateFormat,
+    RECURRING_DIR,
 } from "./filenames";
 import {
     CalendarRepairPlan,
@@ -45,18 +46,18 @@ export default class FullNoteCalendar extends EditableCalendar {
     }
 
     /**
-     * Working-calendar notes live directly in the calendar's own folder.
+     * Working-calendar notes live directly in the calendar's own folder, or in
+     * `_recurring/` immediately below it.
      *
-     * Narrower than the base implementation on purpose, and it has to be:
-     * `getEvents` reads only the folder's immediate children, so without this a
-     * note in a subfolder would be invisible on load but parsed as an ordinary
-     * event the moment it was edited — present on the calendar or not depending
-     * on which code path last ran.
+     * Narrower than the base implementation on purpose, and it has to be: this
+     * has to agree exactly with what `getEvents` reads, or a note would be
+     * invisible on load and yet parsed as an ordinary event the moment it was
+     * edited — on the calendar or not depending on which code path last ran.
      *
-     * The subfolder that matters today is `_recurring/`. Masters stored there
-     * are not ordinary events and nothing parses them until the recurrence
-     * slice lands; treating one as a single event because it happens to carry a
-     * date would put a phantom on the calendar.
+     * `_recurring/` holds the masters, which are events like any other and are
+     * read as such. Nothing deeper is: a nested folder is somebody's own
+     * arrangement of their vault, and claiming it would mean the plugin
+     * renaming notes it was never asked to manage.
      */
     containsPath(path: string): boolean {
         if (!super.containsPath(path)) {
@@ -66,7 +67,14 @@ export default class FullNoteCalendar extends EditableCalendar {
             this.directory === ""
                 ? path
                 : path.slice(this.directory.length + 1);
-        return !relative.includes("/");
+        const separator = relative.indexOf("/");
+        if (separator === -1) {
+            return true;
+        }
+        return (
+            relative.slice(0, separator) === RECURRING_DIR &&
+            !relative.slice(separator + 1).includes("/")
+        );
     }
 
     /**
@@ -130,23 +138,36 @@ export default class FullNoteCalendar extends EditableCalendar {
         return [[event, { file, lineNumber: undefined }]];
     }
 
-    private async getEventsInFolderRecursive(
+    /**
+     * Read the events out of a folder's own notes.
+     *
+     * One level only. Subfolders are somebody else's arrangement of their
+     * vault, apart from `_recurring/`, which `getEvents` asks for by name.
+     */
+    private async getEventsInFolder(
         folder: TFolder
     ): Promise<EditableEventResponse[]> {
-        const events = await Promise.all(
-            folder.children.map(async (file) => {
-                if (file instanceof TFile) {
-                    return await this.getEventsInFile(file);
-                } else if (file instanceof TFolder) {
-                    return await this.getEventsInFolderRecursive(file);
-                } else {
-                    return [];
-                }
-            })
-        );
-        return events.flat();
+        const events: EditableEventResponse[] = [];
+        for (const file of folder.children) {
+            if (file instanceof TFile) {
+                events.push(...(await this.getEventsInFile(file)));
+            }
+        }
+        return events;
     }
 
+    /**
+     * Every event in the calendar: the dated notes, and the recurrence masters
+     * in `_recurring/`.
+     *
+     * A master is one event, not one per occurrence — the rule is expanded at
+     * render time across the range on screen and nowhere else, which is what
+     * makes "every Tuesday, forever" cost the same as any other note.
+     *
+     * The folder is read for whatever is in it rather than for recurring events
+     * specifically. A single event filed there is misplaced, not invalid, and
+     * editing it moves it back out to where its date belongs.
+     */
     async getEvents(): Promise<EditableEventResponse[]> {
         const eventFolder = this.app.getAbstractFileByPath(this.directory);
         if (!eventFolder) {
@@ -155,12 +176,13 @@ export default class FullNoteCalendar extends EditableCalendar {
         if (!(eventFolder instanceof TFolder)) {
             throw new Error(`${eventFolder} is not a directory.`);
         }
-        const events: EditableEventResponse[] = [];
-        for (const file of eventFolder.children) {
-            if (file instanceof TFile) {
-                const results = await this.getEventsInFile(file);
-                events.push(...results);
-            }
+        const events = await this.getEventsInFolder(eventFolder);
+
+        const masters = this.app.getAbstractFileByPath(
+            `${this.directory}/${RECURRING_DIR}`
+        );
+        if (masters instanceof TFolder) {
+            events.push(...(await this.getEventsInFolder(masters)));
         }
         return events;
     }

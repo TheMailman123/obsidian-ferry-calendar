@@ -171,13 +171,29 @@ describe("Note Calendar Tests", () => {
             );
         });
 
-        it("does not claim recurring masters", () => {
-            // getEvents() reads only immediate children, so a master parsed
-            // here would appear on the calendar only after being edited.
+        it("claims recurring masters", () => {
+            // The inversion of slice 3's rule, and the deliberate act of this
+            // commit: getEvents() reads `_recurring/` now, so membership has to
+            // agree or a master would be read on load and disowned on edit.
             expect(
                 calendar.containsPath(
                     `CALENDARS/WORK/${RECURRING_DIR}/20260317_Gym.md`
                 )
+            ).toBe(true);
+        });
+
+        it("does not claim anything deeper than that", () => {
+            expect(
+                calendar.containsPath(
+                    `CALENDARS/WORK/${RECURRING_DIR}/2026/20260317_Gym.md`
+                )
+            ).toBe(false);
+        });
+
+        it("does not claim other subfolders", () => {
+            // A folder the user made is their arrangement of their vault.
+            expect(
+                calendar.containsPath("CALENDARS/WORK/archive/20220101_x.md")
             ).toBe(false);
         });
 
@@ -339,6 +355,53 @@ describe("Note Calendar Tests", () => {
             "
         `);
     });
+    it("reads recurrence masters out of _recurring/", async () => {
+        const obsidian = makeApp(
+            MockAppBuilder.make()
+                .folder(
+                    new MockAppBuilder(dirName)
+                        .file(
+                            "20220101_Test_Event.md",
+                            new FileBuilder().frontmatter({
+                                title: "Test Event",
+                                allDay: true,
+                                date: "2022-01-01",
+                            })
+                        )
+                        .folder(
+                            new MockAppBuilder(RECURRING_DIR).file(
+                                "20260317_Gym.md",
+                                new FileBuilder().frontmatter({
+                                    title: "Gym",
+                                    allDay: true,
+                                    recurring: {
+                                        start: "2026-03-17",
+                                        freq: "weekly",
+                                        byDay: ["TU", "TH"],
+                                    },
+                                })
+                            )
+                        )
+                )
+                .done()
+        );
+        const calendar = new FullNoteCalendar(obsidian, color, dirName);
+
+        const events = await calendar.getEvents();
+        expect(events.map(([event]) => event.title).sort()).toEqual([
+            "Gym",
+            "Test Event",
+        ]);
+
+        // One event for the master, not one per occurrence: the rule is
+        // expanded across the rendered range and nowhere else.
+        const master = events.find(([event]) => event.title === "Gym");
+        expect(master?.[0].type).toBe("recurring");
+        expect(master?.[1].file.path).toBe(
+            `${dirName}/${RECURRING_DIR}/20260317_Gym.md`
+        );
+    });
+
     it("writes a recurring event's rule as an authored block", async () => {
         const obsidian = makeApp(MockAppBuilder.make().done());
         const calendar = new FullNoteCalendar(obsidian, color, dirName);

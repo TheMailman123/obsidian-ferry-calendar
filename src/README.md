@@ -92,7 +92,9 @@ Because the filename is derived, it can fall out of step — a date hand-edited 
 
 Writing an event back into a note is `calendars/frontmatter.ts`, which is free of Obsidian and DOM references and unit-tested directly. Creating a note generates its frontmatter outright; modifying one walks the block that is already there, rewriting the plugin's own keys where they stand and passing everything else through — other plugins' fields, comments, ordering, indentation. The unit it works in is an *entry*, not a line, because a nested block like `recurring:` spans several lines and has to be replaced or preserved whole.
 
-A working calendar reads only the immediate children of its directory, and `containsPath` is narrowed to match. Subfolders — `_recurring/`, which will hold recurrence masters — are consistently invisible to it, rather than being ignored on load but parsed as ordinary events on edit.
+A working calendar reads the immediate children of its directory and of `_recurring/` below it, which holds the recurrence masters, and `containsPath` admits exactly those two. The pair have to agree: a note the calendar reads on load but disowns on edit would be on the calendar or not depending on which code path last ran. Nothing deeper is claimed — a nested folder is somebody's own arrangement of their vault, and claiming it would mean the plugin renaming notes it was never asked to manage.
+
+A master is stored as one event, never as one per occurrence. The rule is expanded across the range on screen and nowhere else, which is what makes "every Tuesday, forever" cost the same as any other note.
 
 `DerivedCalendar` is configured with a mapping — which frontmatter properties hold the dates, how the title is built, whether the record repeats — parsed and applied in `calendars/parsing/derived.ts`. That module is deliberately free of Obsidian and DOM references so it can be unit-tested directly. **No part of the plugin knows what any particular folder of notes is about**: if a mapping cannot express something, the mapping spec is what gets extended.
 
