@@ -111,3 +111,32 @@ While `core` and `calendars` make up the Model in the `MVC` pattern, the Views a
 **Architecture Invariant**: All interactions with event data should be mediated by the `EventCache`. Code in the `ui` directory should not reference or call out to the `EventStore`, Obsidian Vault APIs, or `Calendar` subclasses.
 
 The settings mapping preview is the one place this is awkward, since it has to report what a calendar *would* produce before that calendar exists and can be registered with the cache. It is kept on the `calendars` side of the line, in `calendars/derived_preview.ts`, and the ui layer calls a function rather than constructing a `Calendar`.
+
+## Recurrence
+
+Recurrence crosses every layer, so the whole path in one place. It applies to **working calendars only** — a derived calendar's repeats are projected at render from its source notes and are never written, and the two mechanisms are deliberately not shared.
+
+A recurring event is authored as a block in the note's frontmatter:
+
+```yaml
+title: Gym
+startTime: 06:30
+endTime: 07:30
+recurring:
+  start: 2026-03-17     # DTSTART, required
+  freq: weekly
+  interval: 1
+  byDay: [TU, TH]
+  count: 10             # or: until: 2026-06-30
+```
+
+`recurring.rrule` is the escape hatch for rules the structured fields cannot say, such as `FREQ=MONTHLY;BYDAY=3FR`. The edit modal shows a hand-written rule and leaves it alone rather than offering to rewrite it as whatever the form holds.
+
+The path a rule takes:
+
+1. **Read.** `parseEvent` sees `recurring:` and infers the `recurring` variant — there is no `type` key to get wrong. The inherited `daysOfWeek`/`startRecur`/`endRecur` shape is converted here and never written back.
+2. **Store.** The note is a *master*, one file per rule, living in the calendar's `_recurring/` folder and named for DTSTART. Never one file per occurrence: "every Tuesday, forever" would be infinitely many, and editing the rule would mean rewriting all of them.
+3. **Render.** `compileRecurrence` turns the block into an RRULE string at the render boundary — not on read, or saving the note would replace the authored block with the compiled string — and `interop.ts` hands it to FullCalendar's rrule plugin with a DTSTART built from UTC components.
+4. **Expand.** Only across the range on screen, which the rrule plugin already does. The requirement is therefore a negative one: **`EventCache` and `EventStore` hold one event per master and never expanded occurrences.**
+
+What is not built yet, and is specified in `PLANNING.md` §3.2: per-instance edits and deletes. Deleting one occurrence appends to `skipDates` — the schema parses that field and rejects an unquoted `20260326`, which YAML reads as a number, but nothing writes it yet. Editing one occurrence materialises an override note carrying `recurrenceId`, and "this and all future" sets `until` on the master and starts a new one. None of that is meaningful without the "this event / this and following / all events" prompt, so until it exists, dragging a recurring event changes the time of day of the whole series and leaves the rule alone.
