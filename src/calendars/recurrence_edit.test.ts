@@ -1,5 +1,6 @@
-import { parseEvent } from "../types/schema";
+import { isOverride, parseEvent } from "../types/schema";
 import {
+    overrideOf,
     seriesFrom,
     skipOccurrence,
     truncateSeriesBefore,
@@ -163,6 +164,77 @@ describe("ending a series early", () => {
         });
         expect(() => truncateSeriesBefore(single, "2026-03-24")).toThrow(
             "is not a recurring event"
+        );
+    });
+});
+
+describe("stamping an override", () => {
+    const parent = "[[_recurring/20260317_Gym]]";
+
+    /** The occurrence as the modal hands it back: an ordinary single event. */
+    const edited = (extra: Record<string, unknown> = {}) =>
+        parseEvent({
+            title: "Gym",
+            allDay: false,
+            date: "2026-03-24",
+            startTime: "06:30",
+            endTime: "07:30",
+            ...extra,
+        });
+
+    it("records the occurrence it replaces and the master it belongs to", () => {
+        const override = overrideOf(edited(), "2026-03-24", parent);
+        expect(override).toMatchObject({
+            type: "single",
+            recurrenceId: "2026-03-24",
+            recurringParent: parent,
+        });
+    });
+
+    it("keeps the date the user moved it to, not the one it replaces", () => {
+        // PLANNING §9.1: a moved override lives on its new date, which is where
+        // you would look for it, and recurrenceId remembers the original. The
+        // two differing is the normal case, not a mistake to reconcile.
+        const override = overrideOf(
+            edited({ date: "2026-03-25" }),
+            "2026-03-24",
+            parent
+        );
+        expect(override).toMatchObject({
+            date: "2026-03-25",
+            recurrenceId: "2026-03-24",
+        });
+    });
+
+    it("carries the edit itself", () => {
+        const override = overrideOf(
+            edited({ title: "Gym (late)", startTime: "19:00" }),
+            "2026-03-24",
+            parent
+        );
+        expect(override).toMatchObject({
+            title: "Gym (late)",
+            startTime: "19:00",
+        });
+    });
+
+    it("produces something the rest of the plugin recognises as an override", () => {
+        // Both fields or neither: parseEvent refuses half a pair, so a result
+        // that survives a round trip is one the write path can store.
+        const override = overrideOf(edited(), "2026-03-24", parent);
+        expect(isOverride(override)).toBe(true);
+        expect(isOverride(parseEvent({ ...override }))).toBe(true);
+    });
+
+    it("refuses to override an occurrence with a series", () => {
+        expect(() => overrideOf(gym(weekly), "2026-03-24", parent)).toThrow(
+            "has to be a single event"
+        );
+    });
+
+    it("refuses a date YAML would have read as a number", () => {
+        expect(() => overrideOf(edited(), "20260324", parent)).toThrow(
+            "must be an ISO date"
         );
     });
 });

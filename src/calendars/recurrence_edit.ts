@@ -16,7 +16,7 @@ import { FerryEvent } from "../types";
  *   `until`. The caller then starts a new master for the edited half, so a
  *   split is two ordinary series rather than a third kind of thing to model.
  * - **This event**, edited — the caller materialises an override note instead;
- *   `overrideRecurrenceId` says which occurrence it stands in for.
+ *   `recurrenceId` says which occurrence it stands in for.
  *
  * Every function here is pure and returns a new event: nothing writes, and the
  * caller decides whether the result reaches a note. The module is free of
@@ -145,6 +145,43 @@ export function truncateSeriesBefore(
 
     const { count: _count, ...rest } = rule;
     return { ...master, recurring: { ...rest, until } };
+}
+
+/**
+ * Stamp an edited occurrence as the override that replaces it.
+ *
+ * The event keeps the date the user moved it to — PLANNING §9.1 settles this:
+ * an override moved to another day takes the **new** date, since that is where
+ * you would look for it, and `recurrenceId` is what remembers the original. So
+ * the two dates on an override routinely differ, and neither is redundant.
+ *
+ * @param edited The occurrence as the user has just edited it, already an
+ * ordinary single event — `fromEventApi` produces exactly this shape when it is
+ * given no stored event to preserve a rule from.
+ * @param occurrence The date the rule generated the occurrence on, which this
+ * note now stands in for.
+ * @param parentLink Link to the master, from `FullNoteCalendar.linkTo`.
+ * @throws If handed anything but a single event. An override of a series *by*
+ * a series has no meaning, and a rule stored in a note filed among the dated
+ * ones would render on its DTSTART and nowhere else.
+ */
+export function overrideOf(
+    edited: FerryEvent,
+    occurrence: string,
+    parentLink: string
+): FerryEvent {
+    if (edited.type !== "single") {
+        throw new Error(
+            `Cannot override one occurrence with "${edited.title}": an override has to be a single event, not a ${edited.type} one.`
+        );
+    }
+    requireIsoDate(occurrence, "The occurrence date");
+
+    return {
+        ...edited,
+        recurrenceId: occurrence,
+        recurringParent: parentLink,
+    };
 }
 
 /**
