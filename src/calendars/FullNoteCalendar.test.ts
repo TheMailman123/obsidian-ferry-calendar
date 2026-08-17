@@ -403,6 +403,50 @@ describe("Note Calendar Tests", () => {
         );
     });
 
+    it("plans repairs for masters as well as dated notes", async () => {
+        const obsidian = makeApp(
+            MockAppBuilder.make()
+                .folder(
+                    new MockAppBuilder(dirName)
+                        .file(
+                            "2022-01-01 Test Event.md",
+                            new FileBuilder().frontmatter({
+                                title: "Test Event",
+                                allDay: true,
+                                date: "2022-01-01",
+                            })
+                        )
+                        .folder(
+                            new MockAppBuilder(RECURRING_DIR).file(
+                                "Gym rule.md",
+                                new FileBuilder().frontmatter({
+                                    title: "Gym",
+                                    allDay: true,
+                                    recurring: {
+                                        start: "2026-03-17",
+                                        freq: "weekly",
+                                    },
+                                })
+                            )
+                        )
+                )
+                .done()
+        );
+        const calendar = new FullNoteCalendar(obsidian, color, dirName);
+
+        const plan = await calendar.planFilenameRepair();
+        expect(plan.renames).toEqual([
+            {
+                from: `${dirName}/2022-01-01 Test Event.md`,
+                to: `${dirName}/20220101_Test_Event.md`,
+            },
+            {
+                from: `${dirName}/${RECURRING_DIR}/Gym rule.md`,
+                to: `${dirName}/${RECURRING_DIR}/20260317_Gym.md`,
+            },
+        ]);
+    });
+
     it("writes a recurring event's rule as an authored block", async () => {
         const obsidian = makeApp(MockAppBuilder.make().done());
         const calendar = new FullNoteCalendar(obsidian, color, dirName);

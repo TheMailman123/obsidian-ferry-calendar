@@ -1,4 +1,5 @@
 import { FerryEvent } from "../types";
+import { RECURRING_DIR } from "./filenames";
 import {
     countRenames,
     countUnplannable,
@@ -191,6 +192,105 @@ describe("planRepairs", () => {
         expect(plan.unplannable).toHaveLength(1);
         expect(plan.unplannable[0].path).toBe(`${DIR}/broken.md`);
         expect(plan.unplannable[0].reason).toMatch(/unusable date/);
+    });
+});
+
+describe("planRepairs across _recurring/", () => {
+    const rule = (title: string, start: string): FerryEvent =>
+        ({
+            type: "recurring",
+            title,
+            allDay: true,
+            recurring: { start, freq: "weekly" },
+        } as FerryEvent);
+
+    /** A note holding a recurrence master, in the folder masters belong in. */
+    const master = (
+        basename: string,
+        title: string,
+        start: string
+    ): PlannableNote => ({
+        path: `${DIR}/${RECURRING_DIR}/${basename}.md`,
+        basename,
+        event: rule(title, start),
+    });
+
+    it("leaves a correctly filed master alone", () => {
+        const plan = planRepairs(DIR, [
+            master("20260317_Gym", "Gym", "2026-03-17"),
+        ]);
+        expect(plan.renames).toEqual([]);
+        expect(plan.alreadyCorrect).toBe(1);
+    });
+
+    it("renames a master whose DTSTART was edited by hand", () => {
+        const plan = planRepairs(DIR, [
+            master("20260317_Gym", "Gym", "2026-04-07"),
+        ]);
+        expect(plan.renames).toEqual([
+            {
+                from: `${DIR}/${RECURRING_DIR}/20260317_Gym.md`,
+                to: `${DIR}/${RECURRING_DIR}/20260407_Gym.md`,
+            },
+        ]);
+    });
+
+    it("moves a master that is sitting among the dated notes", () => {
+        // Where a hand-authored one lands, since nothing put it in the folder
+        // masters belong in.
+        const plan = planRepairs(DIR, [
+            {
+                path: `${DIR}/20260317_Gym.md`,
+                basename: "20260317_Gym",
+                event: rule("Gym", "2026-03-17"),
+            },
+        ]);
+        expect(plan.renames).toEqual([
+            {
+                from: `${DIR}/20260317_Gym.md`,
+                to: `${DIR}/${RECURRING_DIR}/20260317_Gym.md`,
+            },
+        ]);
+    });
+
+    it("moves a note that has stopped recurring back out", () => {
+        const plan = planRepairs(DIR, [
+            {
+                path: `${DIR}/${RECURRING_DIR}/20260317_Gym.md`,
+                basename: "20260317_Gym",
+                event: event("Gym", "2026-03-17"),
+            },
+        ]);
+        expect(plan.renames).toEqual([
+            {
+                from: `${DIR}/${RECURRING_DIR}/20260317_Gym.md`,
+                to: `${DIR}/20260317_Gym.md`,
+            },
+        ]);
+    });
+
+    it("lets the two folders hold the same name", () => {
+        // Separate namespaces: a master and the override of one of its
+        // occurrences are named for the same day and the same title.
+        const plan = planRepairs(DIR, [
+            current("20260317_Gym", "Gym", "2026-03-17"),
+            master("20260317_Gym", "Gym", "2026-03-17"),
+        ]);
+        expect(plan.renames).toEqual([]);
+        expect(plan.alreadyCorrect).toBe(2);
+    });
+
+    it("suffixes a master that would collide with another master", () => {
+        const plan = planRepairs(DIR, [
+            master("20260317_Gym", "Gym", "2026-03-17"),
+            master("Gym rule", "Gym", "2026-03-17"),
+        ]);
+        expect(plan.renames).toEqual([
+            {
+                from: `${DIR}/${RECURRING_DIR}/Gym rule.md`,
+                to: `${DIR}/${RECURRING_DIR}/20260317_Gym_2.md`,
+            },
+        ]);
     });
 });
 

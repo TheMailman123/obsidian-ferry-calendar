@@ -192,20 +192,21 @@ export default class FullNoteCalendar extends EditableCalendar {
      * Work out which of this calendar's notes have filenames that disagree
      * with their frontmatter.
      *
-     * Reads only, and only the notes `getEvents` would read. Nothing here
-     * renames anything: the caller decides whether to report the plan or apply
-     * it.
+     * Reads only, and only the notes `getEvents` would read — which now means
+     * `_recurring/` as well, so a master whose DTSTART was hand-edited is
+     * reported like any other drifting note. Nothing here renames anything: the
+     * caller decides whether to report the plan or apply it.
      */
-    async planFilenameRepair(): Promise<CalendarRepairPlan> {
-        const eventFolder = this.app.getAbstractFileByPath(this.directory);
-        if (!eventFolder) {
-            throw new Error(`Cannot get folder ${this.directory}`);
-        }
-        if (!(eventFolder instanceof TFolder)) {
-            throw new Error(`${eventFolder} is not a directory.`);
-        }
+    /**
+     * The notes directly in a folder, as the repair planner needs to see them.
+     *
+     * Notes that are not events are included rather than skipped: the plugin
+     * has no opinion about their names, but those names are still occupied and
+     * a rename must not land on one.
+     */
+    private plannableNotesIn(folder: TFolder): PlannableNote[] {
         const notes: PlannableNote[] = [];
-        for (const file of eventFolder.children) {
+        for (const file of folder.children) {
             if (!(file instanceof TFile)) {
                 continue;
             }
@@ -215,6 +216,26 @@ export default class FullNoteCalendar extends EditableCalendar {
                 event: validateEvent(this.app.getMetadata(file)?.frontmatter),
             });
         }
+        return notes;
+    }
+
+    async planFilenameRepair(): Promise<CalendarRepairPlan> {
+        const eventFolder = this.app.getAbstractFileByPath(this.directory);
+        if (!eventFolder) {
+            throw new Error(`Cannot get folder ${this.directory}`);
+        }
+        if (!(eventFolder instanceof TFolder)) {
+            throw new Error(`${eventFolder} is not a directory.`);
+        }
+        const notes = this.plannableNotesIn(eventFolder);
+
+        const masters = this.app.getAbstractFileByPath(
+            `${this.directory}/${RECURRING_DIR}`
+        );
+        if (masters instanceof TFolder) {
+            notes.push(...this.plannableNotesIn(masters));
+        }
+
         return planRepairs(this.directory, notes, this.dateFormat);
     }
 

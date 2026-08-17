@@ -5,6 +5,7 @@ import {
     DEFAULT_FILENAME_DATE_FORMAT,
     disambiguate,
     FilenameDateFormat,
+    folderForEvent,
 } from "./filenames";
 
 /**
@@ -66,8 +67,21 @@ export type PlannableNote = {
     event: FerryEvent | null;
 };
 
+/** The folder a note is in today, from its path. */
+function folderOf(path: string): string {
+    const separator = path.lastIndexOf("/");
+    return separator === -1 ? "" : path.slice(0, separator);
+}
+
 /**
- * Work out which notes in a calendar folder need renaming.
+ * Work out which of a calendar's notes need renaming or moving.
+ *
+ * A note's folder is derived from its event exactly as its name is, so being in
+ * the wrong one is the same kind of drift as being called the wrong thing: a
+ * recurring event's note belongs in `_recurring/`, and a note that stopped
+ * recurring belongs back out of it. Both are planned here, and a plan entry
+ * that changes folder is a move rather than a rename only in the telling —
+ * Obsidian performs them the same way, rewriting inbound links either way.
  *
  * Target names are reserved as they are assigned, and the names of notes that
  * are staying put are never released. That means a note wanting a name another
@@ -76,8 +90,12 @@ export type PlannableNote = {
  * cannot half-succeed into a collision, and the result is stable when the
  * command is run again.
  *
+ * Names are reserved per folder, since the two folders are separate
+ * namespaces — a master and an ordinary event may share a name without either
+ * having to move.
+ *
  * @param directory Directory of the calendar being planned.
- * @param notes Every note directly in that directory.
+ * @param notes Every note in that directory and in its `_recurring/` folder.
  * @param format Filename date format the user has configured.
  */
 export function planRepairs(
@@ -85,7 +103,13 @@ export function planRepairs(
     notes: PlannableNote[],
     format: FilenameDateFormat = DEFAULT_FILENAME_DATE_FORMAT
 ): CalendarRepairPlan {
-    const taken = new Set(notes.map((n) => n.basename));
+    const taken = new Map<string, Set<string>>();
+    for (const note of notes) {
+        const folder = folderOf(note.path);
+        const names = taken.get(folder) ?? new Set<string>();
+        names.add(note.basename);
+        taken.set(folder, names);
+    }
     const renames: PlannedRename[] = [];
     const unplannable: UnplannableNote[] = [];
     let alreadyCorrect = 0;
@@ -110,18 +134,24 @@ export function planRepairs(
             continue;
         }
 
-        if (basenameMatchesEvent(note.basename, expected)) {
+        const folder = folderForEvent(directory, note.event);
+        if (
+            folder === folderOf(note.path) &&
+            basenameMatchesEvent(note.basename, expected)
+        ) {
             alreadyCorrect++;
             continue;
         }
 
+        const names = taken.get(folder) ?? new Set<string>();
         const target = disambiguate(expected, (candidate) =>
-            taken.has(candidate)
+            names.has(candidate)
         );
-        taken.add(target);
+        names.add(target);
+        taken.set(folder, names);
         renames.push({
             from: note.path,
-            to: `${directory}/${target}.md`,
+            to: `${folder}/${target}.md`,
         });
     }
 
