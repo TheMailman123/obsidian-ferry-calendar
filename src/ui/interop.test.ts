@@ -98,6 +98,63 @@ describe("rendering a compiled rrule event", () => {
     });
 });
 
+describe("rendering a series an override has taken over", () => {
+    const gym = (overridden: string[]) =>
+        toEventInput(
+            "id",
+            parseEvent({
+                title: "Gym",
+                allDay: false,
+                startTime: "06:30",
+                endTime: "07:30",
+                recurring: {
+                    start: "2026-03-17",
+                    freq: "weekly",
+                    byDay: ["TU"],
+                },
+                skipDates: ["2026-03-31"],
+            }),
+            overridden
+        );
+
+    it("cancels the occurrence the override replaces", () => {
+        // The override renders itself, as the ordinary one-date event it is.
+        // Cancelling the generated occurrence is what stops the day appearing
+        // twice, so the exdate has to hit it exactly.
+        const event = gym(["2026-03-24"]);
+        expect(event?.exdate).toContain("2026-03-24T06:30:00");
+    });
+
+    it("cancels a replaced occurrence alongside a deleted one", () => {
+        const event = gym(["2026-03-24"]);
+        expect(event?.exdate).toEqual([
+            "2026-03-31T06:30:00",
+            "2026-03-24T06:30:00",
+        ]);
+    });
+
+    it("leaves a series alone when nothing overrides it", () => {
+        expect(gym([])?.exdate).toEqual(["2026-03-31T06:30:00"]);
+    });
+
+    it("ignores overridden dates on an event that does not repeat", () => {
+        // Nothing generates an occurrence to cancel, and an override is itself
+        // a single event — passing the map's answer for every event is the
+        // caller's simplest correct behaviour, so it has to be harmless here.
+        const event = toEventInput(
+            "id",
+            parseEvent({
+                title: "Gym",
+                allDay: true,
+                date: "2026-03-25",
+            }),
+            ["2026-03-24"]
+        );
+        expect(event?.exdate).toBeUndefined();
+        expect(event?.start).toBe("2026-03-25");
+    });
+});
+
 describe("rendering an authored recurrence block", () => {
     const gym = (recurring: Record<string, unknown>) =>
         toEventInput(

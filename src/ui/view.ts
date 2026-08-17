@@ -95,9 +95,15 @@ export class CalendarView extends ItemView {
         color,
         id,
     }: FerryEventSource): EventSourceInput {
+        // Asked once per source rather than once per event: the answer is a
+        // pass over the whole store, and every master in this calendar needs
+        // to know which of its occurrences an override has taken over.
+        const overridden = this.plugin.cache.overriddenOccurrences();
         return {
             id,
-            events: events.flatMap((e) => toEventInput(e.id, e.event) || []),
+            events: events.flatMap(
+                (e) => toEventInput(e.id, e.event, overridden.get(e.id)) || []
+            ),
             editable,
             ...getCalendarColors(color),
         };
@@ -532,7 +538,11 @@ export class CalendarView extends ItemView {
                     if (!this.isVisible(calendarId)) {
                         return;
                     }
-                    const eventInput = toEventInput(id, event);
+                    const eventInput = toEventInput(
+                        id,
+                        event,
+                        this.plugin.cache.overriddenOccurrences().get(id)
+                    );
                     console.debug("adding event", {
                         id,
                         event,

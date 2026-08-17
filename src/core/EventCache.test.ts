@@ -15,6 +15,10 @@ import { EventPathLocation } from "./EventStore";
 
 jest.mock("../types/schema", () => ({
     validateEvent: (e: any) => e,
+    // The real predicate, not a stub: pairing overrides with their masters is
+    // the thing under test in `overriddenOccurrences`, and a stub would decide
+    // its answer for it.
+    isOverride: (e: any) => e.type === "single" && e.recurrenceId !== undefined,
 }));
 
 const withCounter = <T>(f: (x: string) => T, label?: string) => {
@@ -223,6 +227,15 @@ class TestEditable extends EditableCalendar {
     getEventsInFile = jest.fn();
 
     createEvent = jest.fn();
+
+    // Links are `[[path]]` here and resolve back to whatever is between the
+    // brackets, so a test can point an override at a master by writing the
+    // master's path and nothing has to stand in for Obsidian's link resolution.
+    linkTo = jest.fn((path: string) => `[[${path}]]`);
+    resolveLink = jest.fn((link: string) => {
+        const target = /^\[\[(.+)\]\]$/.exec(link);
+        return target ? target[1] : null;
+    });
 
     deleteEvent = jest.fn();
     move = jest.fn();
@@ -673,6 +686,127 @@ describe("editable calendars", () => {
             }
         );
         it.todo("updates when events are the same but locations are different");
+    });
+
+    /**
+     * Pairing an override with the master it replaces.
+     *
+     * The link is followed to a path and the path to whatever event is stored
+     * there, so what these pin is the pairing, not link syntax — `TestEditable`
+     * resolves `[[x]]` to `x` and nothing else.
+     */
+    describe("occurrences an override has taken over", () => {
+        const MASTER_PATH = "test/_recurring/20260317_Gym.md";
+
+        const master = {
+            title: "Gym",
+            type: "recurring",
+            recurring: { start: "2026-03-17", freq: "weekly", byDay: ["TU"] },
+        } as unknown as FerryEvent;
+
+        const override = (
+            recurrenceId: string,
+            recurringParent = `[[${MASTER_PATH}]]`
+        ) =>
+            ({
+                title: `Gym (${recurrenceId})`,
+                type: "single",
+                date: recurrenceId,
+                recurrenceId,
+                recurringParent,
+            } as unknown as FerryEvent);
+
+        const at = (path: string): EventLocation => ({
+            file: { path } as TFile,
+            lineNumber: undefined,
+        });
+
+        /** The master's ID, which is generated and so cannot be written down. */
+        const masterId = (cache: EventCache) => {
+            const found = cache
+                .getAllEvents()
+                .flatMap((source) => source.events)
+                .find(({ event }) => event.type === "recurring");
+            expect(found).toBeTruthy();
+            return found!.id;
+        };
+
+        const populated = async (events: EditableEventResponse[]) => {
+            const cache = makeCache(events);
+            await cache.populate();
+            return cache;
+        };
+
+        it("names the occurrence the override stands in for", async () => {
+            const cache = await populated([
+                [master, at(MASTER_PATH)],
+                [override("2026-03-24"), at("test/20260324_Gym.md")],
+            ]);
+
+            expect([...cache.overriddenOccurrences()]).toEqual([
+                [masterId(cache), ["2026-03-24"]],
+            ]);
+        });
+
+        it("collects every override of the same series", async () => {
+            const cache = await populated([
+                [master, at(MASTER_PATH)],
+                [override("2026-03-24"), at("test/20260324_Gym.md")],
+                [override("2026-04-07"), at("test/20260407_Gym.md")],
+            ]);
+
+            expect(cache.overriddenOccurrences().get(masterId(cache))).toEqual([
+                "2026-03-24",
+                "2026-04-07",
+            ]);
+        });
+
+        it("leaves a series nothing overrides out of the answer", async () => {
+            const cache = await populated([[master, at(MASTER_PATH)]]);
+            expect(cache.overriddenOccurrences().size).toBe(0);
+        });
+
+        it("ignores ordinary events, which replace nothing", async () => {
+            const cache = await populated([
+                [master, at(MASTER_PATH)],
+                [mockEvent(), at("test/20260324_Something.md")],
+            ]);
+            expect(cache.overriddenOccurrences().size).toBe(0);
+        });
+
+        it("keeps the series intact when the parent link leads nowhere", async () => {
+            // A broken link is a hand-editable field gone wrong, so the
+            // occurrence stays on the calendar beside whatever replaced it —
+            // visibly duplicated, rather than the series quietly losing a day.
+            const warn = jest
+                .spyOn(console, "warn")
+                .mockImplementation(() => {});
+            const cache = await populated([
+                [master, at(MASTER_PATH)],
+                [
+                    override("2026-03-24", "not a link at all"),
+                    at("test/20260324_Gym.md"),
+                ],
+            ]);
+
+            expect(cache.overriddenOccurrences().size).toBe(0);
+            expect(warn).toHaveBeenCalled();
+            warn.mockRestore();
+        });
+
+        it("keeps it intact when the parent is not a series", async () => {
+            const warn = jest
+                .spyOn(console, "warn")
+                .mockImplementation(() => {});
+            const cache = await populated([
+                [mockEvent(), at(MASTER_PATH)],
+                [override("2026-03-24"), at("test/20260324_Gym.md")],
+            ]);
+
+            expect(cache.overriddenOccurrences().size).toBe(0);
+            expect(warn).toHaveBeenCalled();
+            warn.mockRestore();
+        });
     });
 
     describe("make sure cache is populated before doing anything", () => {});

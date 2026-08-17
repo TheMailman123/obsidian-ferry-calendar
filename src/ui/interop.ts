@@ -204,9 +204,21 @@ export function dateEndpointsToFrontmatter(
     };
 }
 
+/**
+ * Translate a stored event into what FullCalendar renders.
+ *
+ * @param id Event ID, which the view uses to find the event again.
+ * @param frontmatter The event as it is stored.
+ * @param overriddenDates Occurrences of this event that an override note now
+ * stands in for, from `EventCache.overriddenOccurrences`. They are cancelled
+ * exactly as a `skipDate` is — the override renders as the ordinary one-date
+ * event it is, and cancelling the generated occurrence is what stops the day
+ * being shown twice. Ignored for an event that does not repeat.
+ */
 export function toEventInput(
     id: string,
-    frontmatter: FerryEvent
+    frontmatter: FerryEvent,
+    overriddenDates: string[] = []
 ): EventInput | null {
     let event: EventInput = {
         id,
@@ -227,13 +239,16 @@ export function toEventInput(
         }
 
         // An exdate cancels an occurrence only by matching it exactly, and
-        // occurrences carry their time in UTC components — so the skipped date
-        // is joined to the rule's own start time, read back the same way.
+        // occurrences carry their time in UTC components — so the cancelled
+        // date is joined to the rule's own start time, read back the same way.
+        // A date the user deleted and a date an override replaces cancel
+        // identically; what differs is only whether a note took its place.
         // NOTE: this does not support events which recur more than once a day.
         const startTime = DateTime.fromJSDate(dtstart, {
             zone: "utc",
         }).toFormat("HH:mm:ss");
-        const exdate = recurrence.skipDates.flatMap((d) => {
+        const cancelled = [...recurrence.skipDates, ...overriddenDates];
+        const exdate = cancelled.flatMap((d) => {
             const date = DateTime.fromISO(d).toISODate();
             return date ? [`${date}T${startTime}`] : [];
         });

@@ -440,4 +440,31 @@ export default class DailyNoteCalendar extends EditableCalendar {
     ): Promise<EventLocation> {
         throw new Error("Method not implemented.");
     }
+
+    /**
+     * Refused: nothing points at an event inside a daily note.
+     *
+     * A link is only ever taken to a recurrence master, and a daily note cannot
+     * hold one — `createEvent` and `modifyEvent` above refuse a recurring event
+     * outright. There is also nothing to point *at*: an event here is one list
+     * item among many in a note that is not about it.
+     */
+    linkTo(path: string): string {
+        throw new Error(
+            `Cannot link to the daily-note event at ${path}: daily notes hold one line per event, not one note per event, and cannot hold a recurring series for an override to belong to.`
+        );
+    }
+
+    /**
+     * Nothing in a daily note resolves to a master, so nothing resolves.
+     *
+     * Not a refusal, because this is asked speculatively while pairing
+     * overrides with their series: a daily note cannot contain a master, so a
+     * link out of one leads to no series of ours. Null is the documented answer
+     * for "points at nothing", and it leaves the event rendering as the
+     * ordinary one-line event it is.
+     */
+    resolveLink(): string | null {
+        return null;
+    }
 }

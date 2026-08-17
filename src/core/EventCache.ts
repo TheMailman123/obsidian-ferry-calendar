@@ -5,6 +5,7 @@ import { Calendar } from "../calendars/Calendar";
 import { EditableCalendar } from "../calendars/EditableCalendar";
 import EventStore, { StoredEvent } from "./EventStore";
 import { CalendarInfo, FerryEvent, validateEvent } from "../types";
+import { isOverride } from "../types/schema";
 import RemoteCalendar from "../calendars/RemoteCalendar";
 import FullNoteCalendar from "../calendars/FullNoteCalendar";
 import { VaultCalendar } from "../calendars/VaultCalendar";
@@ -203,6 +204,86 @@ export default class EventCache {
 
     getEventById(s: string): FerryEvent | null {
         return this.store.getEventById(s);
+    }
+
+    /**
+     * The occurrences that override notes stand in for, by master event ID.
+     *
+     * PLANNING §3.2 puts the splice in the expander rather than on disk: an
+     * edited occurrence becomes its own note and the master is left alone, so
+     * the only record that a generated occurrence has been replaced is the
+     * `recurrenceId` on the note replacing it. The render path asks for that
+     * here and cancels those dates, which is what stops the day showing twice.
+     *
+     * Deliberately computed rather than indexed. An index would have to be
+     * maintained across every add, delete, rename and external file change —
+     * the one thing that has to stay correct for an occurrence not to be
+     * silently lost or doubled — and at the scale in §8 a pass over the store
+     * costs nothing. Overrides are found by following `recurringParent` to a
+     * note and looking up what is stored at that path.
+     *
+     * A parent that resolves to nothing is warned about and skipped: the field
+     * is hand-editable, and a broken link should leave the series rendering as
+     * it did before rather than take the calendar down.
+     *
+     * @returns Master event ID → the occurrence dates replaced, ISO
+     * `YYYY-MM-DD`. Masters with no overrides are absent rather than empty.
+     */
+    overriddenOccurrences(): Map<string, string[]> {
+        const byMaster = new Map<string, string[]>();
+        for (const [calendarId, stored] of this.store.eventsByCalendar) {
+            const calendar = this.calendars.get(calendarId);
+            if (!(calendar instanceof EditableCalendar)) {
+                continue;
+            }
+            for (const { event, location } of stored) {
+                if (!isOverride(event) || !location) {
+                    continue;
+                }
+                const masterId = this.masterAt(
+                    calendar.resolveLink(event.recurringParent, location.path),
+                    event
+                );
+                if (masterId === null) {
+                    continue;
+                }
+                byMaster.set(masterId, [
+                    ...(byMaster.get(masterId) ?? []),
+                    event.recurrenceId,
+                ]);
+            }
+        }
+        return byMaster;
+    }
+
+    /**
+     * ID of the recurring event stored at a path, for an override that claims
+     * to replace one of its occurrences.
+     *
+     * @param path Where `recurringParent` resolved to, or null if it resolved
+     * nowhere.
+     * @param override The override doing the claiming, named in the warning so
+     * the user can find the note whose link needs fixing.
+     * @returns The master's event ID, or null if the link led nowhere, to a
+     * note holding no event, or to an event that does not repeat.
+     */
+    private masterAt(path: string | null, override: FerryEvent): string | null {
+        if (path === null) {
+            console.warn(
+                `FC: "${override.title}" replaces an occurrence of a series its recurringParent does not point at any more, so the occurrence it replaces is still on the calendar.`
+            );
+            return null;
+        }
+        const master = this.store
+            .getEventsInFile({ path })
+            .find(({ event }) => event.type === "recurring");
+        if (!master) {
+            console.warn(
+                `FC: "${override.title}" points at ${path}, which holds no recurring event, so the occurrence it replaces is still on the calendar.`
+            );
+            return null;
+        }
+        return master.id;
     }
 
     getCalendarById(c: string): Calendar | undefined {
