@@ -102,6 +102,34 @@ function dtstartFromWallClock(date: string, time: string | null): Date | null {
     return day.plus(parsed).toJSDate();
 }
 
+/**
+ * The date of the occurrence the user acted on, in the terms the rule spells it.
+ *
+ * This is the value that becomes a `skipDate` or a `recurrenceId`, so it has to
+ * name the same day the rule generated — and the direction of travel is not
+ * symmetric, which is the trap:
+ *
+ * - **Going out**, an occurrence is a marker whose **UTC** components are the
+ *   wall-clock time. That is the convention the whole recurrence path is built
+ *   on; see this module's `dtstartFromWallClock` and the header of
+ *   `calendars/recurrence.ts`.
+ * - **Coming back**, FullCalendar hands the marker to `EventApi` through
+ *   `DateEnv.toDate`, which for the default `local` timezone rebuilds those
+ *   same components as a **local** date. So the wall clock that went out in UTC
+ *   components arrives back in local ones.
+ *
+ * Which means reading it back the way it was written — with `toISODate` in UTC
+ * — would be wrong by a day anywhere with an offset, in the opposite direction
+ * to the mistake `dtstartFromWallClock` exists to avoid. Local components are
+ * correct here precisely because UTC components were correct there.
+ *
+ * @param start Occurrence start, from `EventApi.start`.
+ * @returns The occurrence's date, ISO `YYYY-MM-DD`.
+ */
+export function occurrenceDate(start: Date): string {
+    return getDate(start);
+}
+
 /** A rule to expand, however the event happened to express it. */
 interface Recurrence {
     /** RRULE string, without DTSTART. */

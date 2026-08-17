@@ -7,10 +7,11 @@ import { FCError, PLUGIN_SLUG } from "../types";
 import {
     dateEndpointsToFrontmatter,
     fromEventApi,
+    occurrenceDate,
     toEventInput,
 } from "./interop";
 import { renderOnboarding } from "./onboard";
-import { openFileForEvent } from "./actions";
+import { deleteEventWithScope, openFileForEvent } from "./actions";
 import { launchCreateModal, launchEditModal } from "./event_modal";
 import { isTask, toggleTask, unmakeTask } from "src/ui/tasks";
 import { FerryEventSource, UpdateViewCallback } from "src/core/EventCache";
@@ -289,7 +290,13 @@ export class CalendarView extends ItemView {
                             info.event.id
                         );
                     } else {
-                        launchEditModal(this.plugin, info.event.id);
+                        launchEditModal(
+                            this.plugin,
+                            info.event.id,
+                            info.event.start
+                                ? occurrenceDate(info.event.start)
+                                : null
+                        );
                     }
                 } catch (e) {
                     if (e instanceof Error) {
@@ -420,8 +427,19 @@ export class CalendarView extends ItemView {
                             if (!this.plugin.cache) {
                                 return;
                             }
-                            await this.plugin.cache.deleteEvent(e.id);
-                            new Notice(`Deleted event "${e.title}".`);
+                            try {
+                                await deleteEventWithScope(
+                                    this.plugin.cache,
+                                    this.app,
+                                    e.id,
+                                    e.start ? occurrenceDate(e.start) : null
+                                );
+                            } catch (err) {
+                                console.error(err);
+                                if (err instanceof Error) {
+                                    new Notice(err.message);
+                                }
+                            }
                         })
                     );
                 } else if (this.plugin.cache.getNotePathForEvent(e.id)) {
