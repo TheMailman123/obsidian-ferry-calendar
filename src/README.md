@@ -139,4 +139,20 @@ The path a rule takes:
 3. **Render.** `compileRecurrence` turns the block into an RRULE string at the render boundary — not on read, or saving the note would replace the authored block with the compiled string — and `interop.ts` hands it to FullCalendar's rrule plugin with a DTSTART built from UTC components.
 4. **Expand.** Only across the range on screen, which the rrule plugin already does. The requirement is therefore a negative one: **`EventCache` and `EventStore` hold one event per master and never expanded occurrences.**
 
-What is not built yet, and is specified in `PLANNING.md` §3.2: per-instance edits and deletes. Deleting one occurrence appends to `skipDates` — the schema parses that field and rejects an unquoted `20260326`, which YAML reads as a number, but nothing writes it yet. Editing one occurrence materialises an override note carrying `recurrenceId`, and "this and all future" sets `until` on the master and starts a new one. None of that is meaningful without the "this event / this and following / all events" prompt, so until it exists, dragging a recurring event changes the time of day of the whole series and leaves the rule alone.
+### Per-instance edits
+
+Every drag, resize, edit and delete of a recurring instance asks **"this event / this and following / all events"** first, in `ui/recurrence_prompt.ts`. `PLANNING.md` §3.2 calls the prompt non-negotiable and it is: the same gesture means three different things, and the model below is meaningless without a way to say which was meant. `actions.ts` owns the two flows — `modifyEventWithScope` and `deleteEventWithScope` — so the context menu, the view and the modal cannot drift into answering the same question differently. A dismissed prompt writes nothing, which a drag has to treat as a revert.
+
+The three answers reach three different places, and `calendars/recurrence_edit.ts` holds every transformation between them as a pure function — nothing there writes, and the module is free of Obsidian so it can be unit-tested directly:
+
+| Answer | Delete | Edit |
+|---|---|---|
+| **This event** | append to the master's `skipDates` | materialise an *override* note |
+| **This and following** | cap the master with `until` | cap it, and start a second master at the edit date |
+| **All events** | delete the master | write the edit back to the master |
+
+An **override** is an ordinary single event carrying two extra fields: `recurrenceId`, the date the rule generated the occurrence it replaces, and `recurringParent`, a wikilink to the master. It is deliberately not a fourth variant of the union — it renders, is named, is filed and is completed exactly as any other one-date event, and forking all of that would leave every `type === "single"` check silently not applying to it. A link rather than a path because Obsidian maintains links, and this plugin renames event notes whenever a date or title changes. The two fields travel together or not at all, which `parseEvent` enforces directly since the union no longer can.
+
+An override moved to another day takes the **new** date in its filename — where you would look for it — and `recurrenceId` remembers the original, so the two dates on an override routinely differ (§9.1). Nothing on the master records that an occurrence has been replaced: the splice happens in the expander, and the only record is the `recurrenceId` on the note doing the replacing. `EventCache.overriddenOccurrences` follows `recurringParent` back to each master and the render path cancels those dates exactly as it cancels a deleted one.
+
+That map is **computed on each update, never indexed.** An index would have to survive every rename, every external edit and every write, and the failure when it slips is silent — a day that shows twice, or not at all. For the same reason a master is redrawn from `updateViews` rather than from the writes that touch it: an override can be created, deleted, edited back into an ordinary event, deleted with its file, or changed outside the plugin entirely, and only the choke point sees all five.
