@@ -96,8 +96,22 @@ export type RecurrenceSpec = {
     rrule?: string;
 };
 
-/** Fields that describe the repetition itself, as opposed to when it starts. */
-const STRUCTURED_RULE_FIELDS = ["freq", "interval", "byDay", "count"] as const;
+/**
+ * Fields the raw `rrule` escape hatch replaces, as opposed to `start`.
+ *
+ * Everything describing how the repetition goes or when it stops. A raw rule
+ * says all of it itself, so any of these appearing beside one is a
+ * contradiction rather than an addition — `until` included, which is easy to
+ * miss because it reads like a separate bound on the rule rather than part of
+ * it.
+ */
+const STRUCTURED_RULE_FIELDS = [
+    "freq",
+    "interval",
+    "byDay",
+    "count",
+    "until",
+] as const;
 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 

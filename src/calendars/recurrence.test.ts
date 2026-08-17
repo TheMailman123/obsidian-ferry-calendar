@@ -219,6 +219,19 @@ describe("compileRecurrence", () => {
                 })
             ).toThrow(/both a raw rrule and structured freq/);
         });
+
+        it("rejects an until beside a raw rule, which it would otherwise ignore", () => {
+            // The raw string is returned verbatim, so an `until` set beside one
+            // never reaches the compiled rule. Silently ignoring it means a
+            // series the user believes they ended carrying on forever.
+            expect(() =>
+                compileRecurrence({
+                    start: "2026-03-17",
+                    until: "2026-06-30",
+                    rrule: "FREQ=MONTHLY;BYDAY=3FR",
+                })
+            ).toThrow(/both a raw rrule and structured until/);
+        });
     });
 
     describe("refusing bad rules", () => {
