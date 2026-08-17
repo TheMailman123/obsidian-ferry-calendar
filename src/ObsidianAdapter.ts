@@ -106,6 +106,23 @@ export interface ObsidianInterface {
      * @param system set to true to send to system trash, otherwise Vault trash.
      */
     delete(file: TFile): Promise<void>;
+
+    /**
+     * Resolve a linkpath the way Obsidian's own link resolution does.
+     *
+     * Needed because the plugin stores one link — an override's
+     * `recurringParent`, pointing at the master whose occurrence it replaces —
+     * and a link is not a path. Obsidian shortens links when it rewrites them
+     * on a rename, and users write them by hand, so the same target may be
+     * spelled as a full path in one note and a bare basename in another.
+     * Resolution is relative to the note holding the link, exactly as it is for
+     * a link in a note's body.
+     *
+     * @param linkpath Link target, from `parseWikilink`.
+     * @param sourcePath Path of the note the link appears in.
+     * @returns The file it points at, or null if it resolves to nothing.
+     */
+    resolveLink(linkpath: string, sourcePath: string): TFile | null;
 }
 
 /**
@@ -180,6 +197,10 @@ export class ObsidianIO implements ObsidianInterface {
 
     getMetadata(file: TFile): CachedMetadata | null {
         return this.metadataCache.getFileCache(file);
+    }
+
+    resolveLink(linkpath: string, sourcePath: string): TFile | null {
+        return this.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
     }
 
     waitForMetadata(file: TFile): Promise<CachedMetadata> {

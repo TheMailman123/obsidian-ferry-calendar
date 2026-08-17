@@ -33,6 +33,7 @@ const makeApp = (app: MockApp): ObsidianInterface => ({
     rename: jest.fn(),
     delete: jest.fn(),
     process: jest.fn(),
+    resolveLink: jest.fn(),
 });
 
 const dirName = "RECORDS";

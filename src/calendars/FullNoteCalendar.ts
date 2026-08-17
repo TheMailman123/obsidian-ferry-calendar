@@ -20,6 +20,7 @@ import {
     planRepairs,
 } from "./filename_repair";
 import { modifyFrontmatterString, newFrontmatter } from "./frontmatter";
+import { formatWikilink, parseWikilink } from "./links";
 
 export default class FullNoteCalendar extends EditableCalendar {
     app: ObsidianInterface;
@@ -439,6 +440,39 @@ export default class FullNoteCalendar extends EditableCalendar {
             lineNumber: undefined,
         });
         await this.app.rename(file, newPath);
+    }
+
+    /**
+     * A link pointing at one of this calendar's notes.
+     *
+     * Used for an override's `recurringParent`. It is a link rather than a path
+     * so that Obsidian maintains it: this plugin renames event notes whenever a
+     * date or title changes, and a stored path would be stale the first time
+     * the master's DTSTART moved.
+     *
+     * @param path Vault path of the note to point at.
+     */
+    linkTo(path: string): string {
+        return formatWikilink(path);
+    }
+
+    /**
+     * Follow a link stored in one of this calendar's notes.
+     *
+     * @param link Field value, expected as `[[target]]`.
+     * @param fromPath Path of the note holding the link, since resolution is
+     * relative to it just as it is for a link in a note's body.
+     * @returns Path of the note it points at, or null if the value is not a
+     * link or resolves to nothing. Null is an answer rather than an error: the
+     * field is hand-editable, and one unresolvable parent should not fail the
+     * load of a whole calendar.
+     */
+    resolveLink(link: string, fromPath: string): string | null {
+        const linkpath = parseWikilink(link);
+        if (linkpath === null) {
+            return null;
+        }
+        return this.app.resolveLink(linkpath, fromPath)?.path ?? null;
     }
 
     deleteEvent({ path, lineNumber }: EventPathLocation): Promise<void> {
