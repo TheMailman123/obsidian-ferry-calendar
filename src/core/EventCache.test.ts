@@ -981,5 +981,120 @@ describe("editable calendars", () => {
         });
     });
 
+    /**
+     * Redrawing a series when its overrides change.
+     *
+     * A master renders occurrences that other notes cancel, so it has to be
+     * redrawn when one of those notes appears or goes away — and nothing about
+     * the master itself changes to announce it. What these pin is that the
+     * redraw happens however the override came or went.
+     */
+    describe("redrawing a series its overrides changed under", () => {
+        const MASTER_PATH = "test/_recurring/20260317_Gym.md";
+        const OVERRIDE_PATH = "test/20260324_Gym_late.md";
+
+        const master = {
+            title: "Gym",
+            type: "recurring",
+            recurring: { start: "2026-03-17", freq: "weekly", byDay: ["TU"] },
+        } as unknown as FerryEvent;
+
+        const override = {
+            title: "Gym (late)",
+            type: "single",
+            date: "2026-03-24",
+            recurrenceId: "2026-03-24",
+            recurringParent: `[[${MASTER_PATH}]]`,
+        } as unknown as FerryEvent;
+
+        const at = (path: string): EventLocation => ({
+            file: { path } as TFile,
+            lineNumber: undefined,
+        });
+
+        /** A cache holding a series and the note replacing one occurrence. */
+        const withOverride = async () => {
+            const cache = makeCache([
+                [master, at(MASTER_PATH)],
+                [override, at(OVERRIDE_PATH)],
+            ]);
+            await cache.populate();
+            const events = cache.getAllEvents()[0].events;
+            const onUpdate = jest.fn();
+            cache.on("update", onUpdate);
+            return {
+                cache,
+                calendar: getCalendar(cache, "test"),
+                onUpdate,
+                masterId: events.find(
+                    ({ event }) => event.type === "recurring"
+                )!.id,
+                overrideId: events.find(({ event }) => event.type === "single")!
+                    .id,
+            };
+        };
+
+        /** Whether an update asked the view to draw an event again. */
+        const redrew = (onUpdate: jest.Mock, id: string) =>
+            onUpdate.mock.calls
+                .map(([payload]) => payload)
+                .filter((payload) => payload.type === "events")
+                .some(
+                    ({ toRemove, toAdd }) =>
+                        toRemove.includes(id) &&
+                        toAdd.some((entry: CacheEntry) => entry.id === id)
+                );
+
+        it("brings the occurrence back when the override is deleted", async () => {
+            const { cache, onUpdate, masterId, overrideId } =
+                await withOverride();
+
+            await cache.deleteEvent(overrideId);
+
+            expect(redrew(onUpdate, masterId)).toBe(true);
+        });
+
+        it("does the same when the note is deleted outside the plugin", async () => {
+            const { cache, onUpdate, masterId } = await withOverride();
+
+            cache.deleteEventsAtPath(OVERRIDE_PATH);
+
+            expect(redrew(onUpdate, masterId)).toBe(true);
+        });
+
+        it("leaves a series alone when nothing about its overrides moved", async () => {
+            const { cache, calendar, onUpdate, masterId } =
+                await withOverride();
+            calendar.createEvent.mockResolvedValueOnce(
+                at("test/20260401_Dentist.md")
+            );
+
+            await cache.addEvent(getId("test"), {
+                title: "Dentist",
+                type: "single",
+                date: "2026-04-01",
+            } as unknown as FerryEvent);
+
+            expect(redrew(onUpdate, masterId)).toBe(false);
+        });
+
+        it("does not draw a series that has just been deleted", async () => {
+            // Its overrides stop resolving when it goes, which is a change to
+            // every one of them — and the master must not be added back on the
+            // strength of it.
+            const { cache, onUpdate, masterId } = await withOverride();
+            jest.spyOn(console, "warn").mockImplementation(() => {});
+
+            await cache.deleteEvent(masterId);
+
+            const added = onUpdate.mock.calls
+                .map(([payload]) => payload)
+                .filter((payload) => payload.type === "events")
+                .flatMap(({ toAdd }) => toAdd as CacheEntry[]);
+            expect(added.some((entry) => entry.id === masterId)).toBe(false);
+            jest.restoreAllMocks();
+        });
+    });
+
     describe("make sure cache is populated before doing anything", () => {});
 });

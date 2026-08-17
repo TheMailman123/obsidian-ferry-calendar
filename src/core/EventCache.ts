@@ -113,6 +113,15 @@ export default class EventCache {
 
     private updateViewCallbacks: UpdateViewCallback[] = [];
 
+    /**
+     * Which occurrences were replaced as of the last view update.
+     *
+     * Kept so `updateViews` can tell that a series needs redrawing when the
+     * series itself has not changed — see `mastersWithChangedOverrides`. Reset
+     * with the store, since a fresh cache has drawn nothing yet.
+     */
+    private lastOverriddenOccurrences: Map<string, string[]> = new Map();
+
     initialized = false;
 
     lastRevalidation: number = 0;
@@ -131,6 +140,7 @@ export default class EventCache {
         this.pkCounter = 0;
         this.calendars.clear();
         this.store.clear();
+        this.lastOverriddenOccurrences.clear();
         this.resync();
         this.init();
     }
@@ -162,6 +172,10 @@ export default class EventCache {
                 })
             );
         }
+        // The view rebuilds from `getAllEvents` after this, so what it has just
+        // drawn is the baseline: without it, the first write of the session
+        // would report every overridden series as newly changed.
+        this.lastOverriddenOccurrences = this.overriddenOccurrences();
         this.initialized = true;
         this.revalidateRemoteCalendars();
     }
@@ -397,18 +411,75 @@ export default class EventCache {
 
     /**
      * Push updates to all subscribers.
+     *
+     * A series whose overrides changed is redrawn alongside whatever else
+     * changed, because a master renders occurrences that other notes cancel:
+     * delete the note replacing an occurrence and the occurrence has to come
+     * back, and nothing about the master itself changed to say so.
+     *
+     * Done here rather than at each write because there are five ways to reach
+     * one — an override created, deleted, edited back into an ordinary event,
+     * deleted with its file, or changed outside the plugin entirely — and the
+     * failure when one is missed is silent: a day that shows twice, or not at
+     * all, until the next resync.
+     *
      * @param toRemove IDs of events to remove from the view.
      * @param toAdd Events to add to the view.
      */
     private updateViews(toRemove: string[], toAdd: CacheEntry[]) {
+        const affected = this.mastersWithChangedOverrides(toRemove, toAdd);
         const payload = {
-            toRemove,
-            toAdd,
+            toRemove: [...toRemove, ...affected.map(({ id }) => id)],
+            toAdd: [...toAdd, ...affected],
         };
 
         for (const callback of this.updateViewCallbacks) {
             callback({ type: "events", ...payload });
         }
+    }
+
+    /**
+     * Series that have to be redrawn because their overrides have changed.
+     *
+     * Compares the overrides in the store now against those at the last update
+     * rather than tracking which writes touch an override. The whole map is
+     * recomputed each time and replaces the last, so it cannot drift out of
+     * step with the store the way a maintained index would — and drift here is
+     * exactly the failure that would be invisible.
+     *
+     * @param toRemove IDs already leaving the view.
+     * @param toAdd Events already being drawn.
+     * @returns Masters not already in the update, still in the store, whose set
+     * of replaced occurrences differs from last time.
+     */
+    private mastersWithChangedOverrides(
+        toRemove: string[],
+        toAdd: CacheEntry[]
+    ): CacheEntry[] {
+        const current = this.overriddenOccurrences();
+        const previous = this.lastOverriddenOccurrences;
+        this.lastOverriddenOccurrences = current;
+
+        const changed = [...new Set([...current.keys(), ...previous.keys()])]
+            .filter(
+                (id) =>
+                    (current.get(id) ?? []).join() !==
+                    (previous.get(id) ?? []).join()
+            )
+            // A master already being redrawn picks the change up anyway, and
+            // one being deleted must not be drawn again.
+            .filter(
+                (id) =>
+                    !toRemove.includes(id) &&
+                    !toAdd.some((entry) => entry.id === id)
+            );
+
+        return changed.flatMap((id) => {
+            const details = this.store.getEventDetails(id);
+            return details
+                ? [{ id, event: details.event, calendarId: details.calendarId }]
+                : [];
+        });
     }
 
     private updateCalendar(calendar: FerryEventSource) {
@@ -460,9 +531,10 @@ export default class EventCache {
      * it among the dated notes rather than in `_recurring/`, because that is
      * what it now is.
      *
-     * The master is re-rendered afterwards even though it has not changed: the
-     * occurrence it generates on this date has to stop being drawn, and the
-     * view learns that by asking `overriddenOccurrences` again.
+     * The master is re-rendered afterwards even though it has not changed — the
+     * occurrence it generates on this date has to stop being drawn — but that
+     * happens in `updateViews`, which redraws a series whenever its overrides
+     * change however they came to change.
      *
      * @param masterId ID of the recurring event whose occurrence is replaced.
      * @param occurrence The date the rule generated it on, ISO `YYYY-MM-DD`.
@@ -488,11 +560,6 @@ export default class EventCache {
         await this.addEvent(
             calendar.id,
             overrideOf(edited, occurrence, calendar.linkTo(location.path))
-        );
-
-        this.updateViews(
-            [masterId],
-            [{ id: masterId, calendarId: calendar.id, event: master }]
         );
         return true;
     }
