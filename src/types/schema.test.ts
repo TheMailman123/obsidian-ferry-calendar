@@ -2,8 +2,10 @@ import {
     CommonSchema,
     EventSchema,
     FerryEvent,
+    isOverride,
     ParsedDate,
     ParsedTime,
+    replacedKeys,
     TimeSchema,
     parseEvent,
     serializeEvent,
@@ -210,6 +212,109 @@ describe("schema parsing tests", () => {
                   "type": "single",
                 }
             `);
+        });
+    });
+    describe("overrides", () => {
+        it("carries the occurrence it replaces alongside the date it moved to", () => {
+            // The two dates differ on purpose: `recurrenceId` is the occurrence
+            // the rule generated, `date` is where the user put it.
+            expect(
+                parseEvent({
+                    title: "Gym (moved — bank holiday)",
+                    allDay: false,
+                    startTime: "08:00",
+                    endTime: "09:00",
+                    date: "2026-03-25",
+                    recurrenceId: "2026-03-24",
+                    recurringParent: "[[20260317_Gym]]",
+                })
+            ).toMatchInlineSnapshot(`
+                {
+                  "allDay": false,
+                  "date": "2026-03-25",
+                  "endDate": null,
+                  "endTime": "09:00",
+                  "recurrenceId": "2026-03-24",
+                  "recurringParent": "[[20260317_Gym]]",
+                  "startTime": "08:00",
+                  "title": "Gym (moved — bank holiday)",
+                  "type": "single",
+                }
+            `);
+        });
+
+        it("stays a single event, so isOverride is what tells them apart", () => {
+            const override = parseEvent({
+                title: "Gym",
+                allDay: true,
+                date: "2026-03-25",
+                recurrenceId: "2026-03-24",
+                recurringParent: "[[20260317_Gym]]",
+            });
+            const ordinary = parseEvent({
+                title: "Gym",
+                allDay: true,
+                date: "2026-03-25",
+            });
+            expect(override.type).toBe("single");
+            expect(isOverride(override)).toBe(true);
+            expect(isOverride(ordinary)).toBe(false);
+        });
+
+        it("refuses a recurrenceId with no parent to belong to", () => {
+            // Rendering it anyway would show the moved event *and* leave the
+            // occurrence it replaces standing, so the day appears twice.
+            expect(() =>
+                parseEvent({
+                    title: "Gym",
+                    allDay: true,
+                    date: "2026-03-25",
+                    recurrenceId: "2026-03-24",
+                })
+            ).toThrow("no recurringParent");
+        });
+
+        it("refuses a parent with no occurrence to replace", () => {
+            expect(() =>
+                parseEvent({
+                    title: "Gym",
+                    allDay: true,
+                    date: "2026-03-25",
+                    recurringParent: "[[20260317_Gym]]",
+                })
+            ).toThrow("no recurrenceId");
+        });
+
+        it("retires both fields when an override becomes an ordinary event", () => {
+            // Left behind, `recurrenceId` would go on displacing an occurrence
+            // this note no longer stands in for.
+            const ordinary = serializeEvent(
+                parseEvent({
+                    title: "Gym",
+                    allDay: true,
+                    date: "2026-03-25",
+                })
+            );
+            expect(replacedKeys(ordinary)).toEqual(
+                expect.arrayContaining(["recurrenceId", "recurringParent"])
+            );
+        });
+
+        it("keeps both fields when the event is still an override", () => {
+            const override = serializeEvent(
+                parseEvent({
+                    title: "Gym",
+                    allDay: true,
+                    date: "2026-03-25",
+                    recurrenceId: "2026-03-24",
+                    recurringParent: "[[20260317_Gym]]",
+                })
+            );
+            expect(replacedKeys(override)).not.toEqual(
+                expect.arrayContaining(["recurrenceId"])
+            );
+            expect(override.recurrenceId).toBe("2026-03-24");
+            expect(override.recurringParent).toBe("[[20260317_Gym]]");
         });
     });
     describe("recurring events", () => {
@@ -436,17 +541,43 @@ describe("schema parsing tests", () => {
                     )
             );
 
+        /**
+         * Drop a lone `recurrenceId` or `recurringParent` from a generated
+         * event.
+         *
+         * The two are required to travel together, but that is enforced by
+         * `parseEvent` rather than by the schema — see `requirePairedOverride`,
+         * and the "overrides" tests above, which are what pin the rejection.
+         * Generating straight from the schema therefore produces halves on
+         * purpose, and these properties are about events that are meant to
+         * parse. Dropping the lone field rather than inventing a partner keeps
+         * the generated value inside the schema's own output type.
+         */
+        const pairOverrideFields = <T extends Record<string, unknown>>(
+            obj: T
+        ): T => {
+            const hasId = obj.recurrenceId !== undefined;
+            const hasParent = obj.recurringParent !== undefined;
+            if (hasId === hasParent) {
+                return obj;
+            }
+            const { recurrenceId, recurringParent, ...rest } = obj;
+            return rest as unknown as T;
+        };
+
         it("parses", () => {
             const CommonArb = zfc.inputOf(CommonSchema);
             const TimeArb = zfc.inputOf(TimeSchema);
             const EventArb = zfc.inputOf(EventSchema);
             const EventInputArbitrary = fc
                 .tuple(CommonArb, TimeArb, EventArb)
-                .map(([common, time, event]) => ({
-                    ...common,
-                    ...time,
-                    ...event,
-                }));
+                .map(([common, time, event]) =>
+                    pairOverrideFields({
+                        ...common,
+                        ...time,
+                        ...event,
+                    })
+                );
 
             fc.assert(
                 fc.property(EventInputArbitrary, (obj) => {
@@ -461,11 +592,13 @@ describe("schema parsing tests", () => {
             const EventArb = zfc.outputOf(EventSchema);
             const FerryEventArbitrary: fc.Arbitrary<FerryEvent> = fc
                 .tuple(CommonArb, TimeArb, EventArb)
-                .map(([common, time, event]) => ({
-                    ...common,
-                    ...time,
-                    ...event,
-                }));
+                .map(([common, time, event]) =>
+                    pairOverrideFields({
+                        ...common,
+                        ...time,
+                        ...event,
+                    })
+                );
 
             fc.assert(
                 fc.property(FerryEventArbitrary, (event) => {

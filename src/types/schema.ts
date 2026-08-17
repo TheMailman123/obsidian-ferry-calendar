@@ -110,6 +110,14 @@ export const EventSchema = z.discriminatedUnion("type", [
         completed: ParsedDate.or(z.literal(false))
             .or(z.literal(null))
             .optional(),
+        /**
+         * The occurrence this note replaces, as the date the rule would have
+         * generated it on — *not* the date the note now falls on, which is
+         * `date` and may well differ.
+         */
+        recurrenceId: ParsedDate.optional(),
+        /** Wikilink to the master whose occurrence this replaces. */
+        recurringParent: z.string().optional(),
     }),
     z.object({
         type: z.literal("recurring"),
@@ -144,6 +152,73 @@ export const LEGACY_RECURRENCE_KEYS = [
     "startRecur",
     "endRecur",
 ] as const;
+
+/**
+ * The two fields that together make a single event an override.
+ *
+ * Listed for removal as well as for writing: an override edited back into an
+ * ordinary event has to stop claiming to replace an occurrence, or the master
+ * would go on suppressing a date nothing replaces any more.
+ */
+export const OVERRIDE_KEYS = ["recurrenceId", "recurringParent"] as const;
+
+/**
+ * An override: the single event that stands in for one occurrence of a series.
+ *
+ * Deliberately *not* a fourth variant of the union. An override renders, is
+ * filed, is named and is completed exactly as any other one-date event, so it
+ * is one — with two extra fields saying which occurrence it displaces. Making
+ * it its own variant would fork all of that behaviour and leave every
+ * `type === "single"` check in the plugin silently not applying to it, which
+ * fails by rendering nothing rather than by saying anything.
+ *
+ * What that costs is the union's guarantee that the two fields travel together,
+ * so `parseEvent` enforces it directly instead — see `requirePairedOverride`.
+ */
+export type OverrideFields = {
+    recurrenceId: string;
+    recurringParent: string;
+};
+
+/**
+ * Whether an event replaces one occurrence of a recurring series.
+ *
+ * The one place the question is asked, so that "is this an override" has a
+ * single answer rather than a `recurrenceId !== undefined` check repeated at
+ * each call site with slightly different edges.
+ */
+export function isOverride(
+    event: FerryEvent
+): event is FerryEvent & OverrideFields {
+    return event.type === "single" && event.recurrenceId !== undefined;
+}
+
+/**
+ * Reject half an override.
+ *
+ * `recurrenceId` says which occurrence is replaced and `recurringParent` says
+ * whose; neither is any use alone. An override missing its parent would render
+ * as an ordinary event *and* leave the occurrence it was meant to replace
+ * standing, so the series would show that day twice — the kind of wrong the
+ * user notices long after the edit that caused it.
+ *
+ * @throws If exactly one of the pair is present.
+ */
+function requirePairedOverride(event: FerryEvent): void {
+    if (event.type !== "single") {
+        return;
+    }
+    const hasId = event.recurrenceId !== undefined;
+    const hasParent = event.recurringParent !== undefined;
+    if (hasId === hasParent) {
+        return;
+    }
+    throw new Error(
+        hasId
+            ? `"${event.title}" has a recurrenceId but no recurringParent, so nothing says which series it belongs to. Add recurringParent, or remove recurrenceId to make it an ordinary event.`
+            : `"${event.title}" has a recurringParent but no recurrenceId, so nothing says which occurrence it replaces. Add recurrenceId, or remove recurringParent to make it an ordinary event.`
+    );
+}
 
 /**
  * Settle which variant of the union a frontmatter object describes, converting
@@ -203,11 +278,13 @@ export function parseEvent(obj: unknown): FerryEvent {
         allDay: false,
         ...inferEventType(obj as Record<string, unknown>),
     };
-    return {
+    const event = {
         ...CommonSchema.parse(objectWithDefaults),
         ...TimeSchema.parse(objectWithDefaults),
         ...EventSchema.parse(objectWithDefaults),
     };
+    requirePairedOverride(event);
+    return event;
 }
 
 export function validateEvent(obj: unknown): FerryEvent | null {
@@ -238,15 +315,20 @@ const INFERRED_KEYS = ["type"] as const;
  *
  * Leaving them would not be untidiness but contradiction: a note whose event
  * has been changed from recurring to single, still carrying `type: recurring`,
- * describes an event with no rule and stops parsing altogether.
+ * describes an event with no rule and stops parsing altogether. An override
+ * that has been edited back into an ordinary event is the same story told with
+ * `recurrenceId` — it would go on displacing an occurrence it no longer stands
+ * in for.
  *
  * @param fields Output of `serializeEvent`.
  * @returns Keys to hand to the writer for removal.
  */
 export function replacedKeys(fields: EventFrontmatter): string[] {
-    return [...INFERRED_KEYS, ...LEGACY_RECURRENCE_KEYS].filter(
-        (key) => fields[key] === undefined
-    );
+    return [
+        ...INFERRED_KEYS,
+        ...LEGACY_RECURRENCE_KEYS,
+        ...OVERRIDE_KEYS,
+    ].filter((key) => fields[key] === undefined);
 }
 
 /**
