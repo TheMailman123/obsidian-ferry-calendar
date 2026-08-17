@@ -685,7 +685,63 @@ describe("editable calendars", () => {
                 }
             }
         );
-        it.todo("updates when events are the same but locations are different");
+        /**
+         * A note rewritten without any of its events changing can still move
+         * them — a line inserted above an event in a daily note shifts every
+         * event below it. The store keeps the line a write is applied at, so a
+         * stale one is not a display problem but a wrong edit.
+         */
+        describe("events that did not change but moved", () => {
+            const movedTo = (line: number) => [
+                [oldEvent[0], { file: oldEvent[1].file, lineNumber: line }],
+            ];
+
+            it("follows them to where they now are", async () => {
+                const calendar = getCalendar(cache, "test");
+                calendar.getEventsInFile.mockResolvedValue(movedTo(42));
+
+                await cache.fileUpdated(oldEvent[1].file as TFile);
+
+                const [stored] = cache._storeForTest.getEventsInFile(
+                    oldEvent[1].file
+                );
+                expect(stored.location).toEqual({
+                    path: oldEvent[1].file.path,
+                    lineNumber: 42,
+                });
+            });
+
+            it("keeps their IDs, since they are the same events", async () => {
+                // The view is already drawing them under those IDs; re-keying
+                // would orphan every one.
+                const before = cache
+                    .getAllEvents()[0]
+                    .events.map(({ id }) => id);
+                const calendar = getCalendar(cache, "test");
+                calendar.getEventsInFile.mockResolvedValue(movedTo(42));
+
+                await cache.fileUpdated(oldEvent[1].file as TFile);
+
+                expect(
+                    cache.getAllEvents()[0].events.map(({ id }) => id)
+                ).toEqual(before);
+            });
+
+            it("does not ask the view to draw anything again", async () => {
+                // Nothing rendered depends on where an event is stored, so the
+                // update carries no events — it exists so a series whose
+                // overrides are found by path gets the chance to be redrawn.
+                const calendar = getCalendar(cache, "test");
+                calendar.getEventsInFile.mockResolvedValue(movedTo(42));
+
+                await cache.fileUpdated(oldEvent[1].file as TFile);
+
+                expect(callbackMock).toBeCalled();
+                const { toRemove, toAdd } = callbackMock.mock.calls[0][0];
+                expect(toRemove).toEqual([]);
+                expect(toAdd).toEqual([]);
+            });
+        });
     });
 
     /**

@@ -1,7 +1,7 @@
 import { Notice, TFile } from "obsidian";
 import equal from "deep-equal";
 
-import { Calendar } from "../calendars/Calendar";
+import { Calendar, EventResponse } from "../calendars/Calendar";
 import { EditableCalendar } from "../calendars/EditableCalendar";
 import EventStore, { StoredEvent } from "./EventStore";
 import { CalendarInfo, FerryEvent, validateEvent } from "../types";
@@ -762,6 +762,7 @@ export default class EventCache {
 
         const idsToRemove: string[] = [];
         const eventsToAdd: CacheEntry[] = [];
+        let relocated = false;
 
         for (const calendar of calendars) {
             const oldEvents = this.store.getEventsInFileAndCalendar(
@@ -777,7 +778,6 @@ export default class EventCache {
             const oldEventsMapped = oldEvents.map(({ event }) => event);
             const newEventsMapped = newEvents.map(([event, _]) => event);
             console.debug("comparing events", file.path, oldEvents, newEvents);
-            // TODO: It's possible events are not different, but the location has changed.
             const eventsHaveChanged = eventsAreDifferent(
                 oldEventsMapped,
                 newEventsMapped
@@ -789,8 +789,11 @@ export default class EventCache {
             // unchanged first one must not abandon the others.
             if (!eventsHaveChanged) {
                 console.debug(
-                    "events have not changed, do not update store or view."
+                    "events have not changed, checking where they live."
                 );
+                relocated =
+                    this.relocateEvents(calendar, oldEvents, newEvents) ||
+                    relocated;
                 continue;
             }
             console.debug(
@@ -826,11 +829,69 @@ export default class EventCache {
 
         // Every calendar reading this file may have found nothing to change, in
         // which case subscribers get no callback at all rather than an empty one.
-        if (idsToRemove.length === 0 && eventsToAdd.length === 0) {
+        if (
+            idsToRemove.length === 0 &&
+            eventsToAdd.length === 0 &&
+            !relocated
+        ) {
             return;
         }
 
+        // An empty update when only locations moved: nothing the view draws
+        // depends on where an event is stored, but which occurrences an
+        // override replaces is worked out from paths, so `updateViews` still
+        // has to get the chance to notice a series needs redrawing.
         this.updateViews(idsToRemove, eventsToAdd);
+    }
+
+    /**
+     * Follow events that have not changed to wherever they now live.
+     *
+     * A note can be rewritten without any of its events changing and still move
+     * them: a line inserted above an event in a daily note shifts every event
+     * below it. The event store keeps the line number a write is applied at, so
+     * a stale one is not a display problem but a wrong edit — the plugin would
+     * rewrite whichever line has since taken its place.
+     *
+     * IDs are kept, because these are the same events: the view is already
+     * drawing them under those IDs, and re-keying them would orphan every one.
+     *
+     * Old and new are paired by title, which is the order `eventsAreDifferent`
+     * has just compared them in and found equal, so each old event is matched
+     * with one identical to it.
+     *
+     * @param calendar The calendar the file belongs to.
+     * @param oldEvents What the store holds for this file and calendar.
+     * @param newEvents What the calendar has just read from the file.
+     * @returns Whether anything actually moved.
+     */
+    private relocateEvents(
+        calendar: Calendar,
+        oldEvents: StoredEvent[],
+        newEvents: EventResponse[]
+    ): boolean {
+        const byTitle = <T>(items: T[], title: (item: T) => string): T[] =>
+            [...items].sort((a, b) => title(a).localeCompare(title(b)));
+
+        const stored = byTitle(oldEvents, ({ event }) => event.title);
+        const read = byTitle(newEvents, ([event]) => event.title);
+
+        let moved = false;
+        stored.forEach(({ id, event, location: was }, i) => {
+            const now = read[i]?.[1] ?? null;
+            if (
+                (was?.path ?? null) === (now?.file.path ?? null) &&
+                (was?.lineNumber ?? undefined) ===
+                    (now?.lineNumber ?? undefined)
+            ) {
+                return;
+            }
+            console.debug("event has moved within its file", { id, was, now });
+            this.store.delete(id);
+            this.store.add({ calendar, location: now, id, event });
+            moved = true;
+        });
+        return moved;
     }
 
     /**
