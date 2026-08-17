@@ -1,5 +1,6 @@
 import { isOverride, parseEvent } from "../types/schema";
 import {
+    occurrenceAsSingle,
     overrideOf,
     seriesFrom,
     skipOccurrence,
@@ -163,6 +164,59 @@ describe("ending a series early", () => {
             date: "2026-03-24",
         });
         expect(() => truncateSeriesBefore(single, "2026-03-24")).toThrow(
+            "is not a recurring event"
+        );
+    });
+});
+
+describe("lifting one occurrence out of a series", () => {
+    it("dates the event and leaves nothing repeating", () => {
+        const single = occurrenceAsSingle(gym(weekly), "2026-03-24");
+        expect(single).toMatchObject({ type: "single", date: "2026-03-24" });
+        expect("recurring" in single).toBe(false);
+    });
+
+    it("carries the edit the user just made", () => {
+        const single = occurrenceAsSingle(
+            gym(weekly, { title: "Gym (late)", startTime: "19:00" }),
+            "2026-03-24"
+        );
+        expect(single).toMatchObject({
+            title: "Gym (late)",
+            startTime: "19:00",
+            endTime: "07:30",
+        });
+    });
+
+    it("drops skipDates, which described the series and not this day", () => {
+        const single = occurrenceAsSingle(
+            gym(weekly, { skipDates: ["2026-03-31"] }),
+            "2026-03-24"
+        );
+        expect("skipDates" in single).toBe(false);
+    });
+
+    it("is what an override is stamped from", () => {
+        // The pair is the whole modal path: lift the occurrence out, then say
+        // which occurrence it stands in for.
+        const override = overrideOf(
+            occurrenceAsSingle(gym(weekly), "2026-03-24"),
+            "2026-03-24",
+            "[[_recurring/20260317_Gym]]"
+        );
+        expect(override).toMatchObject({
+            date: "2026-03-24",
+            recurrenceId: "2026-03-24",
+        });
+    });
+
+    it("refuses an event that does not repeat", () => {
+        const single = parseEvent({
+            title: "Gym",
+            allDay: true,
+            date: "2026-03-24",
+        });
+        expect(() => occurrenceAsSingle(single, "2026-03-24")).toThrow(
             "is not a recurring event"
         );
     });

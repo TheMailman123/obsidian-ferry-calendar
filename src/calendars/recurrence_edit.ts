@@ -185,6 +185,39 @@ export function overrideOf(
 }
 
 /**
+ * One occurrence of a series, as the ordinary dated event it would be on its own.
+ *
+ * What the edit modal needs to make an override: the modal holds the *series*,
+ * since that is what the note it opened contains, so an edit scoped to one
+ * occurrence has to be lifted out of the rule that generated it. The result is
+ * `overrideOf`'s input — every field the user edited, on a single date, with
+ * nothing left that repeats.
+ *
+ * A rule change made in the same edit is dropped, and that is the honest
+ * outcome rather than a limitation: the user asked for the change to apply to
+ * one occurrence, and a rule is not a property one occurrence can have.
+ *
+ * @param master The series as the user has just edited it.
+ * @param date The date the occurrence falls on. For the modal this is the
+ * occurrence being replaced, since the modal has no way to move an event to
+ * another day; a drag, which does, builds its single event from the drag
+ * instead and never comes through here.
+ * @returns The same event with no rule, dated at `date`.
+ */
+export function occurrenceAsSingle(
+    master: FerryEvent,
+    date: string
+): FerryEvent {
+    if (master.type !== "recurring") {
+        throw notRecurring(master, "edit one occurrence");
+    }
+    requireIsoDate(date, "The occurrence date");
+
+    const { recurring: _recurring, skipDates: _skipDates, ...rest } = master;
+    return { ...rest, type: "single", date, endDate: null };
+}
+
+/**
  * Start a new series at a given date, carrying an edit.
  *
  * The second half of "this and following": the old master is capped by

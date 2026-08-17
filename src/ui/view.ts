@@ -367,6 +367,8 @@ export class CalendarView extends ItemView {
                         oldEvent.start ? occurrenceDate(oldEvent.start) : null,
                         {
                             series: fromEventApi(newEvent, existing),
+                            // Dated where the drag landed, per §9.1, not
+                            // at the occurrence it replaces.
                             instance: () => fromEventApi(newEvent),
                         }
                     );

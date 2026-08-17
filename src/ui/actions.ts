@@ -71,8 +71,12 @@ export type EventEdits = {
      *
      * A function because it is built only when an override is actually made,
      * and building it for an event with no rule left to strip would throw.
+     *
+     * @param occurrence The date the rule generated the occurrence on. A caller
+     * that cannot move an event — the modal — dates the note with it; one that
+     * can — a drag — dates the note where the user dropped it and ignores this.
      */
-    instance: () => FerryEvent;
+    instance: (occurrence: string) => FerryEvent;
 };
 
 /**
@@ -136,7 +140,11 @@ export async function modifyEventWithScope(
     }
 
     if (scope === "this") {
-        await cache.createOverride(eventId, occurrence, edits.instance());
+        await cache.createOverride(
+            eventId,
+            occurrence,
+            edits.instance(occurrence)
+        );
         new Notice(
             `The occurrence of "${stored.title}" on ${occurrence} is now its own note.`
         );

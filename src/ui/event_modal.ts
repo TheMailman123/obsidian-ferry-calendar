@@ -3,7 +3,12 @@ import * as React from "react";
 import { EditableCalendar } from "src/calendars/EditableCalendar";
 import FerryCalendarPlugin from "src/main";
 import { FerryEvent } from "src/types";
-import { deleteEventWithScope, openFileForEvent } from "./actions";
+import { occurrenceAsSingle } from "src/calendars/recurrence_edit";
+import {
+    deleteEventWithScope,
+    modifyEventWithScope,
+    openFileForEvent,
+} from "./actions";
 import { EditEvent } from "./components/EditEvent";
 import ReactModal from "./ReactModal";
 
@@ -86,7 +91,25 @@ export function launchEditModal(
                             calendars[calendarIndex].id
                         );
                     }
-                    await plugin.cache.updateEventWithId(eventId, data);
+                    // As with deleting: a dismissed prompt leaves the modal
+                    // open, because the user has not finished with the event —
+                    // they have declined to say how much of it to change.
+                    const modified = await modifyEventWithScope(
+                        plugin.cache,
+                        plugin.app,
+                        eventId,
+                        occurrence,
+                        {
+                            series: data,
+                            // The modal edits the series, so an edit meant for
+                            // one occurrence has to be lifted out of the rule
+                            // that generated it.
+                            instance: (on) => occurrenceAsSingle(data, on),
+                        }
+                    );
+                    if (!modified) {
+                        return;
+                    }
                 } catch (e) {
                     if (e instanceof Error) {
                         new Notice("Error when updating event: " + e.message);
