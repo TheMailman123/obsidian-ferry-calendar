@@ -1,5 +1,6 @@
 import { App, MarkdownView, Notice, TFile, Vault, Workspace } from "obsidian";
 import EventCache from "src/core/EventCache";
+import { FerryEvent } from "src/types";
 import {
     skipOccurrence,
     truncateSeriesBefore,
@@ -50,6 +51,101 @@ export async function openFileForEvent(
     if (lineNumber && leaf.view instanceof MarkdownView) {
         leaf.view.editor.setCursor({ line: lineNumber, ch: 0 });
     }
+}
+
+/**
+ * The edit to apply, in the two forms the three answers need.
+ *
+ * A drag reaches the series and the instance differently and there is no
+ * converting one into the other after the fact: moving an occurrence to
+ * Wednesday means "this series now falls on Wednesday" under **All events**
+ * and "this one note is dated Wednesday" under **This event**, and the rule is
+ * only in the first. So the caller, which is the only thing that knows what the
+ * user actually did, supplies both.
+ */
+export type EventEdits = {
+    /** The edit as it applies to the whole series, rule intact. */
+    series: FerryEvent;
+    /**
+     * The same edit as one ordinary dated event, for an override note.
+     *
+     * A function because it is built only when an override is actually made,
+     * and building it for an event with no rule left to strip would throw.
+     */
+    instance: () => FerryEvent;
+};
+
+/**
+ * Apply an edit, asking which occurrences when the event repeats.
+ *
+ * The counterpart to `deleteEventWithScope`, and the second half of the UI
+ * contract in PLANNING §3.2: a drag, resize or save on a recurring instance
+ * asks before it writes, because the same gesture means three different things.
+ *
+ * - **This event** materialises an override note. The master is untouched; the
+ *   occurrence it generates stops being drawn because the override says it
+ *   replaces it.
+ * - **This and following** caps the master and starts a second series at the
+ *   edit date.
+ * - **All events** writes the edit back to the master, which is what a drag on
+ *   a recurring event did before there was a prompt.
+ *
+ * @param cache Event cache, which mediates every write.
+ * @param app Obsidian app, for the prompt.
+ * @param eventId ID of the event — the master, for a series.
+ * @param occurrence Date of the occurrence the user acted on, from
+ * `occurrenceDate`, and for a drag the date it started from rather than the one
+ * it landed on. Ignored for an event that does not repeat.
+ * @param edits The edit to apply. See `EventEdits`.
+ * @returns Whether anything was written. False means the user dismissed the
+ * prompt, which a drag has to treat as a revert: the occurrence has already
+ * moved on screen.
+ */
+export async function modifyEventWithScope(
+    cache: EventCache,
+    app: App,
+    eventId: string,
+    occurrence: string | null,
+    edits: EventEdits
+): Promise<boolean> {
+    const stored = cache.getEventById(eventId);
+    if (!stored) {
+        throw new Error(`Event ID ${eventId} is not in the cache.`);
+    }
+
+    if (stored.type !== "recurring") {
+        await cache.updateEventWithId(eventId, edits.series);
+        return true;
+    }
+
+    const scope = await promptRecurrenceScope(app, "edit", stored.title);
+    if (scope === null) {
+        return false;
+    }
+
+    if (scope === "all") {
+        await cache.updateEventWithId(eventId, edits.series);
+        new Notice(`Updated every occurrence of "${stored.title}".`);
+        return true;
+    }
+
+    if (occurrence === null) {
+        throw new Error(
+            `Cannot edit a single occurrence of "${stored.title}": nothing recorded which occurrence was clicked.`
+        );
+    }
+
+    if (scope === "this") {
+        await cache.createOverride(eventId, occurrence, edits.instance());
+        new Notice(
+            `The occurrence of "${stored.title}" on ${occurrence} is now its own note.`
+        );
+        return true;
+    }
+
+    await cache.splitSeriesAt(eventId, occurrence, edits.series);
+    new Notice(`"${stored.title}" changes from ${occurrence} onwards.`);
+    return true;
 }
 
 /**

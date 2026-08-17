@@ -11,7 +11,11 @@ import {
     toEventInput,
 } from "./interop";
 import { renderOnboarding } from "./onboard";
-import { deleteEventWithScope, openFileForEvent } from "./actions";
+import {
+    deleteEventWithScope,
+    modifyEventWithScope,
+    openFileForEvent,
+} from "./actions";
 import { launchCreateModal, launchEditModal } from "./event_modal";
 import { isTask, toggleTask, unmakeTask } from "src/ui/tasks";
 import { FerryEventSource, UpdateViewCallback } from "src/core/EventCache";
@@ -347,15 +351,25 @@ export class CalendarView extends ItemView {
                     // The stored event is what a recurring one is edited
                     // against: the view hands back a single occurrence, and a
                     // rule rebuilt from that would not be the rule the user
-                    // wrote.
+                    // wrote. Given no stored event, the same call produces the
+                    // dragged occurrence as an ordinary dated one — which is
+                    // exactly the shape an override note takes.
                     const existing = this.plugin.cache.getEventById(
                         oldEvent.id
                     );
-                    const didModify = await this.plugin.cache.updateEventWithId(
+                    return await modifyEventWithScope(
+                        this.plugin.cache,
+                        this.app,
                         oldEvent.id,
-                        fromEventApi(newEvent, existing)
+                        // Where the drag started, not where it landed: the
+                        // occurrence being replaced is the one the rule
+                        // generated.
+                        oldEvent.start ? occurrenceDate(oldEvent.start) : null,
+                        {
+                            series: fromEventApi(newEvent, existing),
+                            instance: () => fromEventApi(newEvent),
+                        }
                     );
-                    return !!didModify;
                 } catch (e: any) {
                     console.error(e);
                     new Notice(e.message);

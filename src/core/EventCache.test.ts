@@ -809,5 +809,177 @@ describe("editable calendars", () => {
         });
     });
 
+    /**
+     * Writing a per-instance edit: the two shapes an edited occurrence takes.
+     *
+     * What these pin is which files exist afterwards and what they say, since
+     * both operations are several writes that have to happen together or not at
+     * all. The transformations themselves are `recurrence_edit.test.ts`.
+     */
+    describe("editing one occurrence of a series", () => {
+        const MASTER_PATH = "test/_recurring/20260317_Gym.md";
+
+        const master = {
+            title: "Gym",
+            type: "recurring",
+            recurring: { start: "2026-03-17", freq: "weekly", byDay: ["TU"] },
+        } as unknown as FerryEvent;
+
+        const edited = (overrides: Record<string, unknown> = {}) =>
+            ({
+                title: "Gym (late)",
+                type: "single",
+                date: "2026-03-24",
+                startTime: "19:00",
+                endTime: "20:00",
+                ...overrides,
+            } as unknown as FerryEvent);
+
+        const at = (path: string): EventLocation => ({
+            file: { path } as TFile,
+            lineNumber: undefined,
+        });
+
+        /** A populated cache holding one series, and its ID. */
+        const withSeries = async (event: FerryEvent = master) => {
+            const cache = makeCache([[event, at(MASTER_PATH)]]);
+            await cache.populate();
+            const calendar = getCalendar(cache, "test");
+            const masterId = cache.getAllEvents()[0].events[0].id;
+            return { cache, calendar, masterId };
+        };
+
+        describe("this event only", () => {
+            it("writes the edit as a note that says which occurrence it replaces", async () => {
+                const { cache, calendar, masterId } = await withSeries();
+                calendar.createEvent.mockResolvedValueOnce(
+                    at("test/20260324_Gym_late.md")
+                );
+
+                await cache.createOverride(masterId, "2026-03-24", edited());
+
+                expect(calendar.createEvent).toHaveBeenCalledWith({
+                    ...edited(),
+                    recurrenceId: "2026-03-24",
+                    recurringParent: `[[${MASTER_PATH}]]`,
+                });
+            });
+
+            it("leaves the master alone, which is where the record is not kept", async () => {
+                const { cache, calendar, masterId } = await withSeries();
+                calendar.createEvent.mockResolvedValueOnce(
+                    at("test/20260324_Gym_late.md")
+                );
+
+                await cache.createOverride(masterId, "2026-03-24", edited());
+
+                expect(calendar.modifyEvent).not.toHaveBeenCalled();
+                expect(cache.getEventById(masterId)).toEqual(master);
+            });
+
+            it("redraws the master, whose occurrence has to stop being drawn", async () => {
+                // The master has not changed, so nothing else would ask the
+                // view to look at it again — and until it does, the replaced
+                // occurrence and the note replacing it are both on the calendar.
+                const { cache, calendar, masterId } = await withSeries();
+                calendar.createEvent.mockResolvedValueOnce(
+                    at("test/20260324_Gym_late.md")
+                );
+                const onUpdate = jest.fn();
+                cache.on("update", onUpdate);
+
+                await cache.createOverride(masterId, "2026-03-24", edited());
+
+                const redrawn = onUpdate.mock.calls
+                    .map(([payload]) => payload)
+                    .filter((payload) => payload.type === "events")
+                    .some(
+                        ({ toRemove, toAdd }) =>
+                            toRemove.includes(masterId) &&
+                            toAdd.some(
+                                (entry: CacheEntry) => entry.id === masterId
+                            )
+                    );
+                expect(redrawn).toBe(true);
+            });
+
+            it("refuses an event that does not repeat", async () => {
+                const { cache, masterId } = await withSeries(edited());
+                await assertFailed(
+                    () =>
+                        cache.createOverride(masterId, "2026-03-24", edited()),
+                    /not a recurring event/
+                );
+            });
+        });
+
+        describe("this and following", () => {
+            it("caps the old series and starts a new one at the edit date", async () => {
+                const { cache, calendar, masterId } = await withSeries();
+                calendar.createEvent.mockResolvedValueOnce(
+                    at("test/_recurring/20260324_Gym_late.md")
+                );
+                // A real calendar reports where the note ended up, which is
+                // what puts the rewritten event back in the store.
+                calendar.modifyEvent.mockImplementation(
+                    async (_loc, _event, updateCacheWithLocation) =>
+                        updateCacheWithLocation(at(MASTER_PATH))
+                );
+
+                await cache.splitSeriesAt(masterId, "2026-03-24", {
+                    ...master,
+                    title: "Gym (late)",
+                } as FerryEvent);
+
+                expect(cache.getEventById(masterId)).toMatchObject({
+                    recurring: { until: "2026-03-23" },
+                });
+                expect(calendar.createEvent).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        title: "Gym (late)",
+                        recurring: expect.objectContaining({
+                            start: "2026-03-24",
+                        }),
+                    })
+                );
+            });
+
+            it("replaces the series outright when the split is at its first occurrence", async () => {
+                // Capping it would leave a rule that generates nothing, so
+                // there is no first half to keep.
+                const { cache, calendar, masterId } = await withSeries();
+                calendar.createEvent.mockResolvedValueOnce(
+                    at("test/_recurring/20260317_Gym_late.md")
+                );
+
+                await cache.splitSeriesAt(masterId, "2026-03-17", {
+                    ...master,
+                    title: "Gym (late)",
+                } as FerryEvent);
+
+                expect(calendar.deleteEvent).toHaveBeenCalled();
+                expect(cache.getEventById(masterId)).toBeNull();
+                expect(calendar.createEvent).toHaveBeenCalledWith(
+                    expect.objectContaining({ title: "Gym (late)" })
+                );
+            });
+
+            it("writes nothing when the edit is no longer a series", async () => {
+                // An edit that dropped the rule cannot become the half that
+                // follows, and finding that out after capping the original
+                // would leave the series truncated and nothing continuing it.
+                const { cache, calendar, masterId } = await withSeries();
+
+                await assertFailed(
+                    () => cache.splitSeriesAt(masterId, "2026-03-24", edited()),
+                    /not a recurring event/
+                );
+                expect(calendar.modifyEvent).not.toHaveBeenCalled();
+                expect(calendar.deleteEvent).not.toHaveBeenCalled();
+                expect(calendar.createEvent).not.toHaveBeenCalled();
+            });
+        });
+    });
+
     describe("make sure cache is populated before doing anything", () => {});
 });

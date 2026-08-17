@@ -6,6 +6,11 @@ import { EditableCalendar } from "../calendars/EditableCalendar";
 import EventStore, { StoredEvent } from "./EventStore";
 import { CalendarInfo, FerryEvent, validateEvent } from "../types";
 import { isOverride } from "../types/schema";
+import {
+    overrideOf,
+    seriesFrom,
+    truncateSeriesBefore,
+} from "../calendars/recurrence_edit";
 import RemoteCalendar from "../calendars/RemoteCalendar";
 import FullNoteCalendar from "../calendars/FullNoteCalendar";
 import { VaultCalendar } from "../calendars/VaultCalendar";
@@ -443,6 +448,100 @@ export default class EventCache {
 
         this.updateViews([], [{ event, id, calendarId: calendar.id }]);
         return true;
+    }
+
+    /**
+     * Materialise the note that replaces one occurrence of a series.
+     *
+     * The master is left exactly as it was — PLANNING §3.2 keeps the record of
+     * a replaced occurrence on the note doing the replacing, so what this adds
+     * is one ordinary single event that happens to remember where it came
+     * from. It lands in the master's own calendar, and `folderForEvent` files
+     * it among the dated notes rather than in `_recurring/`, because that is
+     * what it now is.
+     *
+     * The master is re-rendered afterwards even though it has not changed: the
+     * occurrence it generates on this date has to stop being drawn, and the
+     * view learns that by asking `overriddenOccurrences` again.
+     *
+     * @param masterId ID of the recurring event whose occurrence is replaced.
+     * @param occurrence The date the rule generated it on, ISO `YYYY-MM-DD`.
+     * @param edited The occurrence as the user has just edited it.
+     * @throws If the ID is not a recurring event. The caller has already
+     * decided it is splitting a series, so anything else means it looked up the
+     * wrong event, and writing the override anyway would leave a note pointing
+     * at a master that cannot generate the occurrence it claims to replace.
+     */
+    async createOverride(
+        masterId: string,
+        occurrence: string,
+        edited: FerryEvent
+    ): Promise<boolean> {
+        const { calendar, location } = this.getInfoForEditableEvent(masterId);
+        const master = this.store.getEventById(masterId);
+        if (master?.type !== "recurring") {
+            throw new Error(
+                `Cannot replace an occurrence of event ID ${masterId}: it is not a recurring event.`
+            );
+        }
+
+        await this.addEvent(
+            calendar.id,
+            overrideOf(edited, occurrence, calendar.linkTo(location.path))
+        );
+
+        this.updateViews(
+            [masterId],
+            [{ id: masterId, calendarId: calendar.id, event: master }]
+        );
+        return true;
+    }
+
+    /**
+     * Split a series in two at one occurrence, carrying an edit into the half
+     * that follows.
+     *
+     * "This and following", which PLANNING §3.2 declines to model: the old
+     * master is capped with `until` and a second master takes over from the
+     * edit date, so what the user gets is two ordinary series rather than a
+     * third kind of record with a pointer between them.
+     *
+     * The new series is built before anything is written, so an edit that
+     * cannot become a series leaves the original untouched rather than capping
+     * it and then failing to replace the half it removed.
+     *
+     * @param masterId ID of the series being split.
+     * @param occurrence The first occurrence the edit applies to, ISO
+     * `YYYY-MM-DD`.
+     * @param edited The event as the user has just edited it, rule and all.
+     * @throws If the ID is not a recurring event, or if the edit is not one —
+     * an edit that removed the rule is a request to stop repeating, which is
+     * not something half a series can express.
+     */
+    async splitSeriesAt(
+        masterId: string,
+        occurrence: string,
+        edited: FerryEvent
+    ): Promise<void> {
+        const { calendar } = this.getInfoForEditableEvent(masterId);
+        const master = this.store.getEventById(masterId);
+        if (master?.type !== "recurring") {
+            throw new Error(
+                `Cannot split event ID ${masterId}: it is not a recurring event.`
+            );
+        }
+
+        const capped = truncateSeriesBefore(master, occurrence);
+        const next = seriesFrom(edited, occurrence);
+
+        if (capped === null) {
+            // The user edited from the first occurrence onwards, so nothing is
+            // left of the original half and the new series simply replaces it.
+            await this.deleteEvent(masterId);
+        } else {
+            await this.updateEventWithId(masterId, capped);
+        }
+        await this.addEvent(calendar.id, next);
     }
 
     /**
