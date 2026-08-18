@@ -243,6 +243,22 @@ describe("schema parsing tests", () => {
             `);
         });
 
+        it("keeps a uid, which the schema would otherwise strip", () => {
+            // Zod drops keys it does not know, so a uid absent from the schema
+            // would survive in the note only until the event was next saved —
+            // and a uid that changes is worse than none, since the phone would
+            // delete the event and add it back rather than update it.
+            const event = parseEvent({
+                title: "Gym",
+                allDay: true,
+                date: "2026-03-25",
+                uid: "5f2c-ferry",
+            });
+            expect(event.uid).toBe("5f2c-ferry");
+            expect(serializeEvent(event).uid).toBe("5f2c-ferry");
+            expect(replacedKeys(serializeEvent(event))).not.toContain("uid");
+        });
+
         it("stays a single event, so isOverride is what tells them apart", () => {
             const override = parseEvent({
                 title: "Gym",

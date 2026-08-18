@@ -67,6 +67,22 @@ export const TimeSchema = z.discriminatedUnion("allDay", [
 export const CommonSchema = z.object({
     title: z.string(),
     id: z.string().optional(),
+    /**
+     * Identity for the ICS export, stable for the life of the event.
+     *
+     * Written into the note the first time a calendar with export enabled is
+     * exported, and never changed after — that is the whole of its job. The
+     * cache's `id` cannot serve: it is generated per session, so every export
+     * would present a new set of events and a subscriber would delete and
+     * recreate the calendar rather than update it. Nor can the path, since this
+     * plugin renames notes whenever a date or title changes, which is exactly
+     * when an update matters most. See PLANNING §7.4.
+     *
+     * Absent on every event until it is exported, and absent forever on
+     * calendars that are never exported: a key in someone's notes has to earn
+     * its place.
+     */
+    uid: z.string().optional(),
 });
 
 /**
