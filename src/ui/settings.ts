@@ -28,8 +28,20 @@ import {
     isFilenameDateFormat,
 } from "src/calendars/filenames";
 
+/**
+ * Where exported `.ics` files are written, relative to the vault root.
+ *
+ * A folder of its own rather than beside each calendar: the files are not
+ * notes, nobody opens them in Obsidian, and keeping them together is what makes
+ * them easy to find, to point a subscription at, and to gitignore — which
+ * PLANNING §7.3 asks for, so an export is not committed and pushed by accident.
+ */
+export const DEFAULT_ICS_EXPORT_FOLDER = "_ics";
+
 export interface FerryCalendarSettings {
     calendarSources: CalendarInfo[];
+    /** @see DEFAULT_ICS_EXPORT_FOLDER */
+    icsExportFolder: string;
     defaultCalendar: number;
     firstDay: number;
     initialView: {
@@ -70,6 +82,7 @@ export const DEFAULT_SETTINGS: FerryCalendarSettings = {
     hiddenCalendars: [],
     calendarKeyCollapsed: false,
     filenameDateFormat: DEFAULT_FILENAME_DATE_FORMAT,
+    icsExportFolder: DEFAULT_ICS_EXPORT_FOLDER,
 };
 
 const WEEKDAYS = [
@@ -310,6 +323,24 @@ export class FerryCalendarSettingTab extends PluginSettingTab {
                 );
                 toggle.onChange(async (val) => {
                     this.plugin.settings.clickToCreateEventFromMonthView = val;
+                    await this.plugin.saveSettings();
+                });
+            });
+
+        new Setting(containerEl)
+            .setName("ICS export folder")
+            .setDesc(
+                "Folder in the vault for exported .ics files, one per calendar with export switched on. Point a subscription app on your phone at the file — the OS handles the alerts, since a plugin cannot."
+            )
+            .addText((text) => {
+                text.setPlaceholder(DEFAULT_ICS_EXPORT_FOLDER);
+                text.setValue(this.plugin.settings.icsExportFolder);
+                text.onChange(async (val) => {
+                    // Falling back to the default rather than accepting an
+                    // empty string, which would scatter the files across the
+                    // vault root beside the user's notes.
+                    this.plugin.settings.icsExportFolder =
+                        val.trim() || DEFAULT_ICS_EXPORT_FOLDER;
                     await this.plugin.saveSettings();
                 });
             });

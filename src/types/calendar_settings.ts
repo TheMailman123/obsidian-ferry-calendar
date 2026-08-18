@@ -33,6 +33,25 @@ const calendarOptionsSchema = z.discriminatedUnion("type", [
 
 const colorValidator = z.object({ color: z.string() });
 
+/**
+ * Whether and how a calendar is exported for the phone to subscribe to.
+ *
+ * Opt-in, per calendar, off by default — PLANNING §7.3 makes that a security
+ * boundary rather than a convenience: an exported file leaves the vault's
+ * protection the moment it syncs to a device, so nothing is exported unless it
+ * was chosen. There is no vault-wide sweep and there is not meant to be one.
+ *
+ * The reminder lead time lives here, not on the event, because that is what was
+ * asked for: one value per calendar, and an event needing a different one goes
+ * in a different calendar. A frontmatter key was offered and declined, so the
+ * absence of per-event reminders is a decision rather than a gap.
+ */
+const icsExportValidator = z.object({
+    exportToICS: z.boolean().default(false),
+    /** Minutes before an event to alert, or null for no alarm at all. */
+    reminderMinutes: z.number().nullable().default(15),
+});
+
 export type TestSource = {
     type: "FOR_TEST_ONLY";
     id: string;
@@ -43,13 +62,22 @@ export type CalendarInfo = (
     | z.infer<typeof calendarOptionsSchema>
     | TestSource
 ) &
-    z.infer<typeof colorValidator>;
+    z.infer<typeof colorValidator> &
+    // Partial, so a calendar constructed in code — a test double, a source
+    // being built up in the add-calendar form — does not have to say it is not
+    // exported. `parseCalendarInfo` fills both in for anything loaded from
+    // settings, and every reader treats absence as "not exported", which is the
+    // safe direction for an opt-in that governs what leaves the vault.
+    Partial<z.infer<typeof icsExportValidator>>;
 
 export function parseCalendarInfo(obj: unknown): CalendarInfo {
     const options = calendarOptionsSchema.parse(obj);
     const color = colorValidator.parse(obj);
+    // Defaults rather than a required field, so settings saved before the
+    // export existed load unchanged and stay unexported.
+    const icsExport = icsExportValidator.parse(obj);
 
-    return { ...options, ...color };
+    return { ...options, ...color, ...icsExport };
 }
 
 export function safeParseCalendarInfo(obj: unknown): CalendarInfo | null {
