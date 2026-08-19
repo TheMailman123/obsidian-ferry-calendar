@@ -35,6 +35,12 @@ import {
  * notes, nobody opens them in Obsidian, and keeping them together is what makes
  * them easy to find, to point a subscription at, and to gitignore — which
  * PLANNING §7.3 asks for, so an export is not committed and pushed by accident.
+ *
+ * The gitignoring itself is the user's to do, and the setting's description
+ * says so. Writing to a vault's `.gitignore` would be the plugin editing a file
+ * it does not own, in a repo it was never told about, to change what a tool it
+ * has nothing to do with commits — one folder in a settings field is not worth
+ * that authority. PLANNING §9.2 closed on this.
  */
 export const DEFAULT_ICS_EXPORT_FOLDER = "_ics";
 
@@ -340,7 +346,7 @@ export class FerryCalendarSettingTab extends PluginSettingTab {
         new Setting(containerEl)
             .setName("ICS export folder")
             .setDesc(
-                "Folder in the vault for exported .ics files, one per calendar with export switched on. Point a subscription app on your phone at the file — the OS handles the alerts, since a plugin cannot."
+                "Folder in the vault for exported .ics files, one per calendar with export switched on. Point a subscription app on your phone at the file — the OS handles the alerts, since a plugin cannot. If your vault is a git repo, add this folder to its .gitignore: the plugin will not edit that file for you."
             )
             .addText((text) => {
                 text.setPlaceholder(DEFAULT_ICS_EXPORT_FOLDER);
