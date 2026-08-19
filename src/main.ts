@@ -311,10 +311,26 @@ export default class FerryCalendarPlugin extends Plugin {
             this.reportFilenameDrift().catch((e) =>
                 console.error("Could not check event filenames", e)
             );
-            // A vault edited while Obsidian was closed has changes the export
-            // never saw. Writing once at startup is what makes the file on
-            // disk true rather than merely up to date with this session.
-            this.scheduleExport();
+            // The cache is filled here rather than waiting for a calendar to
+            // be opened. Both the export and the reminders read it, and
+            // neither has any business depending on a view being on screen —
+            // left to the view, a session where no calendar leaf is opened
+            // exports nothing and reminds about nothing, silently.
+            this.cache
+                .populate()
+                .then(() => {
+                    // A vault edited while Obsidian was closed has changes the
+                    // export never saw. Writing once at startup is what makes
+                    // the file on disk true rather than merely up to date with
+                    // this session.
+                    this.scheduleExport();
+                })
+                .catch((e) =>
+                    console.error(
+                        "Ferry Calendar: could not load events at startup",
+                        e
+                    )
+                );
         });
 
         // Desktop only. Mobile has no notification API to call and stops

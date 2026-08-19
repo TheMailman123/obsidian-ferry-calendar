@@ -120,7 +120,11 @@ class TestReadonly extends Calendar {
  */
 async function harness(
     calendars: { calendar: Calendar; info: Partial<CalendarInfo> }[],
-    options: { enabled?: boolean } = {}
+    options: {
+        enabled?: boolean;
+        /** Stands in for the platform call, which can fail. */
+        show?: (reminder: Reminder) => void;
+    } = {}
 ) {
     const infos = calendars.map(
         ({ calendar, info }) =>
@@ -154,7 +158,10 @@ async function harness(
 
     const notifier = new Notifier(
         cache,
-        (reminder) => shown.push(reminder),
+        (reminder) => {
+            options.show?.(reminder);
+            shown.push(reminder);
+        },
         () => enabled,
         () => now
     );
@@ -477,6 +484,55 @@ describe("what a reminder says", () => {
         expect(reminder.occurrence.start.toISO()).toBe(
             at("2026-03-17T09:00").toISO()
         );
+    });
+});
+
+describe("when things go wrong", () => {
+    it("says nothing while the cache is still loading", async () => {
+        const h = await harness([
+            { calendar: standupCalendar(), info: { reminderMinutes: 15 } },
+        ]);
+
+        // Back to an empty store with the calendars still registered, which is
+        // what a cache mid-load looks like from the outside.
+        h.cache.reset([]);
+
+        expect(h.tickAt("2026-03-17T08:50")).toEqual([]);
+    });
+
+    it("shows the rest of a batch when one notification fails", async () => {
+        const other = new TestEditable("travel", [
+            [
+                event({
+                    title: "Ferry",
+                    date: "2026-03-17",
+                    startTime: "09:00",
+                    endTime: "10:00",
+                }),
+                located("travel/ferry.md"),
+            ],
+        ]);
+        const h = await harness(
+            [
+                { calendar: standupCalendar(), info: { reminderMinutes: 15 } },
+                { calendar: other, info: { reminderMinutes: 15 } },
+            ],
+            {
+                show: (reminder) => {
+                    if (reminder.title === "Standup") {
+                        throw new Error("no notification permission");
+                    }
+                },
+            }
+        );
+        jest.spyOn(console, "error").mockImplementation(() => undefined);
+
+        // Both fell due together; the one that could be shown still was.
+        expect(h.tickAt("2026-03-17T08:50").map((r) => r.title)).toEqual([
+            "Standup",
+            "Ferry",
+        ]);
+        expect(h.titlesShown()).toEqual(["Ferry"]);
     });
 });
 

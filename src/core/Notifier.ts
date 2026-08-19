@@ -130,6 +130,13 @@ export default class Notifier {
         if (!this.enabled()) {
             return [];
         }
+        // A cache still filling has some of the calendar in it, which is worse
+        // than none: a series whose override has not loaded yet still shows
+        // the occurrence the override was going to cancel, and a reminder for
+        // it cannot be taken back once it has been shown.
+        if (!this.cache.initialized) {
+            return [];
+        }
         const leads = this.leads();
         if (leads.size === 0) {
             return [];
@@ -187,7 +194,24 @@ export default class Notifier {
             });
         }
 
-        due.forEach((reminder) => this.show(reminder));
+        // Shown one at a time on purpose. `show` reaches a platform API that
+        // can fail, and two events falling due together is exactly when losing
+        // the second one matters — it is already marked as shown, so a later
+        // tick will not try again.
+        const failures: unknown[] = [];
+        for (const reminder of due) {
+            try {
+                this.show(reminder);
+            } catch (e) {
+                failures.push(e);
+            }
+        }
+        if (failures.length > 0) {
+            console.error(
+                `FC: ${failures.length} reminder(s) could not be shown.`,
+                ...failures
+            );
+        }
         return due;
     }
 

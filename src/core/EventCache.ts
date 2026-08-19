@@ -170,9 +170,31 @@ export default class EventCache {
     }
 
     /**
-     * Populate the cache with events.
+     * Fill the cache with events, unless it is already full or filling.
+     *
+     * Guarded on both counts because `populate` *appends* to the store: a
+     * second pass over the same calendars would add every event a second time,
+     * and there are now three callers that can overlap — the view when a
+     * calendar leaf opens, the plugin at layout-ready, and a settings save.
+     * Only a `reset` makes the cache fillable again, which is what every
+     * caller that means "reload from disk" already does first.
      */
     async populate(): Promise<void> {
+        if (this.initialized) {
+            return;
+        }
+        if (!this.populating) {
+            this.populating = this.fill().finally(() => {
+                this.populating = null;
+            });
+        }
+        return this.populating;
+    }
+
+    /** In-flight fill, so overlapping callers wait rather than duplicate. */
+    private populating: Promise<void> | null = null;
+
+    private async fill(): Promise<void> {
         if (!this.initialized || this.calendars.size === 0) {
             this.init();
         }
