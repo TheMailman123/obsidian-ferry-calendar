@@ -177,7 +177,10 @@ function ExportSetting({
     onExportChange: (patch: Partial<CalendarInfo>) => void;
 }) {
     const enabled = source.exportToICS ?? false;
-    const minutes = source.reminderMinutes ?? 15;
+    // Empty rather than the default when there is no reminder: the box is what
+    // says whether this calendar alerts at all, and painting 15 into a
+    // calendar storing `null` would show a lead time that will never fire.
+    const minutes = source.reminderMinutes ?? "";
     return (
         <div
             className="setting-item-control"
