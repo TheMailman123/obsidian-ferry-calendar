@@ -64,7 +64,7 @@ Both recurring shapes render through one path there: the authored block is compi
 
 ### `core`
 
-The `core` directory consists of two classes, `EventStore` and `EventCache`. These two classes comprise the plugin's main event-managing logic.
+The `core` directory consists of `EventStore` and `EventCache`, which comprise the plugin's main event-managing logic, and `IcsExporter`, which reads them.
 
 The `EventStore` is the source of truth for events in the plugin. Its interface is similar to a simplified database that stores events, calendars and file locations. Files and calendars are one-to-many relationships: every event is related to exactly one calendar and at most one file, but calendars and files can have many events within them. The `EventStore` allows for effecient querying of events grouped by calendars and files. Every event in the `EventStore` has an ID associated with it. Local events have random IDs that are generated at insert time, but remote events using the iCal spec have `UID`s that are plumbed through.
 
@@ -72,9 +72,11 @@ The `EventCache` manages the state stored in the `EventStore`. Its main job is c
 
 -   Hook (via `MetadataCache.on('update')`) for when a file has changed so that it can tell `Calendar`s to re-parse that file.
 -   Hook for when an event with a given ID has been modified from the view.
-    Other components can subscribe to state updates on the `EventCache`. Right now, the view is the only subscriber, but in the future it may be possible for other plugins to subscribe to updates.
+    Other components can subscribe to state updates on the `EventCache`. The view and the ICS export are the current subscribers; in the future it may be possible for other plugins to subscribe to updates.
 
 Notably, while the `core` components have some knowledge of Obsidian APIs (mostly the `TFile` type and the ability to show `Notice` toasts to the user), they do not hold references to the `App`, `Vault`, `MetadataCache` or any other API that deals with file I/O. File I/O is handled entirely by the `Calendar` subclasses. This simplifies testing dramatically, since the Obsidian API does not need to be mocked out when testing the `EventCache` logic.
+
+`IcsExporter` also lives here. It reads the cache and writes `.ics` files, so it is neither a `Calendar` — nothing it writes is an event note, and no calendar owns the files — nor `ui`, since no view is involved. See the export section below.
 
 The plugin has exactly one `EventCache` instance at any given time. It is initialized and hooked up to `Vault` and `MetadataCache` listeners when the plugin is initialized, in `main.ts`.
 
@@ -156,3 +158,19 @@ An **override** is an ordinary single event carrying two extra fields: `recurren
 An override moved to another day takes the **new** date in its filename — where you would look for it — and `recurrenceId` remembers the original, so the two dates on an override routinely differ (§9.1). Nothing on the master records that an occurrence has been replaced: the splice happens in the expander, and the only record is the `recurrenceId` on the note doing the replacing. `EventCache.overriddenOccurrences` follows `recurringParent` back to each master and the render path cancels those dates exactly as it cancels a deleted one.
 
 That map is **computed on each update, never indexed.** An index would have to survive every rename, every external edit and every write, and the failure when it slips is silent — a day that shows twice, or not at all. For the same reason a master is redrawn from `updateViews` rather than from the writes that touch it: an override can be created, deleted, edited back into an ordinary event, deleted with its file, or changed outside the plugin entirely, and only the choke point sees all five.
+
+## Export
+
+Obsidian plugins cannot raise an OS notification, and on mobile they do not run at all once the app is backgrounded — a `setTimeout` for tomorrow's 9am meeting never fires. So the plugin does not try to be the thing that alerts you. It writes an `.ics` file, and something built for the job reads it: `PLANNING.md` §7.4 measured the whole chain — plugin writes the file, Syncthing carries it, ICSx⁵ subscribes to it, Android holds the events and fires the alerts.
+
+The work splits in two. `calendars/ics_export.ts` decides what a file *says*: it turns events into `VEVENT`s, folds lines to 75 octets, and is free of Obsidian so it can be unit-tested directly. `core/IcsExporter.ts` decides which events go in, what identity they carry, and whether the file is worth writing at all.
+
+**One file per calendar, and only for calendars that opted in.** `exportToICS` defaults to false and there is no vault-wide sweep: an exported file leaves the vault's protection the moment it syncs to a device, so nothing leaves unless it was chosen (§7.3). Titles and times only — never note bodies, paths or wikilinks. One file rather than one combined file because ICSx⁵ takes a display name when a subscription is created and treats it as its own from then on, so each calendar needs its own subscription to get its own name, colour and alarm settings. The alarm lead time is per calendar for the same reason, and because nothing in a note says when to be reminded.
+
+**Every event carries a `uid`, assigned once and stored in its frontmatter.** Not the cache ID, which is generated per session, and not the path, which changes whenever a date or title does: either would make every export look like a fresh set of events, and a subscriber would delete and recreate the calendar rather than update it. The uid is random rather than derived from the event, since anything derived from an event changes when the event does. Assigning one is the only write an export makes to a note.
+
+An override is emitted **under its master's `uid`**, distinguished by `RECURRENCE-ID` — that is what makes a subscriber replace the generated occurrence rather than add an event beside it. So the exporter needs the same master-to-override pairing the render path needs, and both go through `EventCache.masterOf` rather than each following `recurringParent` their own way. An override whose master is not in the same file is left out with a warning: alone it would show its day twice, once as itself and once as the occurrence it was meant to replace.
+
+**Nothing is written unless something changed.** `DTSTAMP` is required by RFC 5545 and names when the *description* of an event was written, so it differs on every run and says nothing about whether anything happened. The exporter generates the file, compares it against what is on disk with those lines stripped, and writes only on a real difference. Without that, Syncthing would re-transfer and ICSx⁵ would re-sync on a timer forever. It also means two devices exporting into the same synced folder produce identical bytes and the second writes nothing, so there is no conflict to raise — and it is what stops the export feeding itself, since assigning a uid rewrites a note, which updates the cache, which triggers another export that finds every uid already present.
+
+Exports are triggered from `main.ts`, debounced, on any cache update and once when the layout is ready — a vault edited while Obsidian was closed has changes the export never saw. The debounce matters because one edit produces several cache updates and a calendar's first export produces one more per event as uids are assigned. An export is never awaited by the thing that triggered it: it is a consequence of a change, not a step in making one.
