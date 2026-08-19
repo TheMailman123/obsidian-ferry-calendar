@@ -5,34 +5,19 @@ import { compileRecurrence } from "../calendars/recurrence";
 import { DateTime, Duration } from "luxon";
 import { rrulestr } from "rrule";
 
+// The timezone convention these three encode is documented in
+// `calendars/occurrences.ts`. Imported rather than restated: it is the one
+// thing in the recurrence path that is wrong by a whole day when it slips.
+import {
+    dtstartFromWallClock,
+    parseTime,
+    recurrenceOf,
+} from "../calendars/occurrences";
+
 /*
  * Functions for converting between the types used by the fullcalendar.io view library and the
  * types used internally by Ferry Calendar.
  */
-
-const parseTime = (time: string): Duration | null => {
-    let parsed = DateTime.fromFormat(time, "h:mm a");
-    if (parsed.invalidReason) {
-        parsed = DateTime.fromFormat(time, "HH:mm");
-    }
-    if (parsed.invalidReason) {
-        parsed = DateTime.fromFormat(time, "HH:mm:ss");
-    }
-
-    if (parsed.invalidReason) {
-        console.error(
-            `FC: Error parsing time string '${time}': ${parsed.invalidReason}'`
-        );
-        return null;
-    }
-
-    return Duration.fromISOTime(
-        parsed.toISOTime({
-            includeOffset: false,
-            includePrefix: false,
-        })
-    );
-};
 
 const add = (date: DateTime, time: Duration): DateTime => {
     let hours = time.hours;
@@ -70,39 +55,6 @@ const combineDateTimeStrings = (date: string, time: string): string | null => {
 };
 
 /**
- * DTSTART for a recurrence rule, in the terms the `rrule` package reads.
- *
- * That package takes the **UTC components** of DTSTART as a wall-clock time and
- * answers in the same terms, so the date and time as the user wrote them are
- * assembled in UTC and handed over unconverted. Building this from the local
- * zone instead is the mistake the whole module has to avoid: Sydney midnight is
- * 13:00Z the day before, and every occurrence of the series then comes back a
- * day early.
- *
- * @param date Start date, ISO `YYYY-MM-DD`.
- * @param time Start time, or null for an all-day event.
- * @returns The date, or null if either half was unreadable — in which case the
- * event does not render at all, rather than rendering on the wrong day.
- */
-function dtstartFromWallClock(date: string, time: string | null): Date | null {
-    const day = DateTime.fromISO(date, { zone: "utc" });
-    if (!day.isValid) {
-        console.error(
-            `FC: Error parsing start date '${date}': ${day.invalidReason}`
-        );
-        return null;
-    }
-    if (time === null) {
-        return day.toJSDate();
-    }
-    const parsed = parseTime(time);
-    if (!parsed) {
-        return null;
-    }
-    return day.plus(parsed).toJSDate();
-}
-
-/**
  * The date of the occurrence the user acted on, in the terms the rule spells it.
  *
  * This is the value that becomes a `skipDate` or a `recurrenceId`, so it has to
@@ -128,59 +80,6 @@ function dtstartFromWallClock(date: string, time: string | null): Date | null {
  */
 export function occurrenceDate(start: Date): string {
     return getDate(start);
-}
-
-/** A rule to expand, however the event happened to express it. */
-interface Recurrence {
-    /** RRULE string, without DTSTART. */
-    rule: string;
-    /** The day the series begins. */
-    startDate: string;
-    /** Dates whose occurrence is cancelled. */
-    skipDates: string[];
-}
-
-/**
- * The rule an event repeats by.
- *
- * Both recurring shapes converge here: `recurring` is the block as authored in
- * a note, compiled on the way past, and `rrule` is the already-compiled form
- * that ICS and derived calendars build internally. Compiling at the render
- * boundary rather than on read is what keeps the authored block in the file —
- * a note read and written back would otherwise have its rule replaced by an
- * opaque `FREQ=WEEKLY;BYDAY=TU,TH`.
- *
- * @returns The rule, or null if the authored block does not describe one.
- * `compileRecurrence` refuses rules it cannot read rather than resolving them,
- * since a wrong rule is not one wrong event but every occurrence of it.
- */
-function recurrenceOf(frontmatter: FerryEvent): Recurrence | null {
-    if (frontmatter.type === "rrule") {
-        return {
-            rule: frontmatter.rrule,
-            startDate: frontmatter.startDate,
-            skipDates: frontmatter.skipDates,
-        };
-    }
-    if (frontmatter.type === "recurring") {
-        try {
-            return {
-                rule: compileRecurrence(frontmatter.recurring),
-                startDate: frontmatter.recurring.start,
-                skipDates: frontmatter.skipDates ?? [],
-            };
-        } catch (e) {
-            console.error(
-                `FC: '${
-                    frontmatter.title
-                }' has a recurrence rule that cannot be compiled, so it has been left off the calendar: ${
-                    e instanceof Error ? e.message : String(e)
-                }`
-            );
-            return null;
-        }
-    }
-    return null;
 }
 
 export function dateEndpointsToFrontmatter(
