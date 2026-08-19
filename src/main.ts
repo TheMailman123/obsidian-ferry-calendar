@@ -1,4 +1,11 @@
-import { MarkdownView, Notice, Plugin, TFile, debounce } from "obsidian";
+import {
+    MarkdownView,
+    Notice,
+    Platform,
+    Plugin,
+    TFile,
+    debounce,
+} from "obsidian";
 import {
     CalendarView,
     FERRY_CALENDAR_SIDEBAR_VIEW_TYPE,
@@ -14,6 +21,7 @@ import {
 import { PLUGIN_SLUG } from "./types";
 import EventCache from "./core/EventCache";
 import IcsExporter from "./core/IcsExporter";
+import Notifier from "./core/Notifier";
 import { ObsidianIO } from "./ObsidianAdapter";
 import { launchCreateModal } from "./ui/event_modal";
 import FullNoteCalendar from "./calendars/FullNoteCalendar";
@@ -28,6 +36,14 @@ import {
     describePlan,
 } from "./calendars/filename_repair";
 import { FilenameRepairModal } from "./ui/repair_modal";
+
+/**
+ * How often to look for an event that has fallen due.
+ *
+ * Half a minute: fine enough that a reminder is never noticeably late, coarse
+ * enough that the work — expanding a few minutes of calendar — is nothing.
+ */
+const TICK_MS = 30_000;
 
 export default class FerryCalendarPlugin extends Plugin {
     settings: FerryCalendarSettings = DEFAULT_SETTINGS;
@@ -117,6 +133,20 @@ export default class FerryCalendarPlugin extends Plugin {
         true
     );
 
+    /**
+     * Desktop reminders, off unless switched on in settings.
+     *
+     * The `Notification` constructor is the browser API, which exists here
+     * because Obsidian's desktop app is Electron and this code is its renderer.
+     * On mobile there is no such thing, which is why the tick is never
+     * registered there at all — see `Notifier` and PLANNING §7.1.
+     */
+    private notifier: Notifier = new Notifier(
+        this.cache,
+        ({ title, body }) => new Notification(title, { body }),
+        () => this.settings.desktopNotifications
+    );
+
     async activateView() {
         const leaves = this.app.workspace
             .getLeavesOfType(FERRY_CALENDAR_VIEW_TYPE)
@@ -203,6 +233,7 @@ export default class FerryCalendarPlugin extends Plugin {
             name: "Reset Event Cache",
             callback: () => {
                 this.cache.reset(this.settings.calendarSources);
+                this.notifier.reset();
                 this.app.workspace.detachLeavesOfType(FERRY_CALENDAR_VIEW_TYPE);
                 this.app.workspace.detachLeavesOfType(
                     FERRY_CALENDAR_SIDEBAR_VIEW_TYPE
@@ -285,6 +316,15 @@ export default class FerryCalendarPlugin extends Plugin {
             // disk true rather than merely up to date with this session.
             this.scheduleExport();
         });
+
+        // Desktop only. Mobile has no notification API to call and stops
+        // running the moment Obsidian is backgrounded, so a timer there would
+        // burn battery to no effect (PLANNING §7.1).
+        if (Platform.isDesktopApp) {
+            this.registerInterval(
+                window.setInterval(() => this.notifier.check(), TICK_MS)
+            );
+        }
     }
 
     /**
@@ -462,6 +502,9 @@ export default class FerryCalendarPlugin extends Plugin {
         new Notice("Resetting the event cache with new settings...");
         await this.saveData(this.settings);
         this.cache.reset(this.settings.calendarSources);
+        // Event IDs are handed out per session and reused after a reset, so
+        // what the notifier has already announced no longer means anything.
+        this.notifier.reset();
         await this.cache.populate();
         this.cache.resync();
     }

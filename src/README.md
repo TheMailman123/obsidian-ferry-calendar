@@ -64,7 +64,7 @@ Both recurring shapes render through one path there: the authored block is compi
 
 ### `core`
 
-The `core` directory consists of `EventStore` and `EventCache`, which comprise the plugin's main event-managing logic, and `IcsExporter`, which reads them.
+The `core` directory consists of `EventStore` and `EventCache`, which comprise the plugin's main event-managing logic, and `IcsExporter` and `Notifier`, which read them.
 
 The `EventStore` is the source of truth for events in the plugin. Its interface is similar to a simplified database that stores events, calendars and file locations. Files and calendars are one-to-many relationships: every event is related to exactly one calendar and at most one file, but calendars and files can have many events within them. The `EventStore` allows for effecient querying of events grouped by calendars and files. Every event in the `EventStore` has an ID associated with it. Local events have random IDs that are generated at insert time, but remote events using the iCal spec have `UID`s that are plumbed through.
 
@@ -76,7 +76,7 @@ The `EventCache` manages the state stored in the `EventStore`. Its main job is c
 
 Notably, while the `core` components have some knowledge of Obsidian APIs (mostly the `TFile` type and the ability to show `Notice` toasts to the user), they do not hold references to the `App`, `Vault`, `MetadataCache` or any other API that deals with file I/O. File I/O is handled entirely by the `Calendar` subclasses. This simplifies testing dramatically, since the Obsidian API does not need to be mocked out when testing the `EventCache` logic.
 
-`IcsExporter` also lives here. It reads the cache and writes `.ics` files, so it is neither a `Calendar` — nothing it writes is an event note, and no calendar owns the files — nor `ui`, since no view is involved. See the export section below.
+`IcsExporter` also lives here. It reads the cache and writes `.ics` files, so it is neither a `Calendar` — nothing it writes is an event note, and no calendar owns the files — nor `ui`, since no view is involved. See the export section below. `Notifier` sits beside it for the same reason: it reads the cache and raises desktop notifications, and no view is involved.
 
 The plugin has exactly one `EventCache` instance at any given time. It is initialized and hooked up to `Vault` and `MetadataCache` listeners when the plugin is initialized, in `main.ts`.
 
@@ -174,3 +174,17 @@ An override is emitted **under its master's `uid`**, distinguished by `RECURRENC
 **Nothing is written unless something changed.** `DTSTAMP` is required by RFC 5545 and names when the *description* of an event was written, so it differs on every run and says nothing about whether anything happened. The exporter generates the file, compares it against what is on disk with those lines stripped, and writes only on a real difference. Without that, Syncthing would re-transfer and ICSx⁵ would re-sync on a timer forever. It also means two devices exporting into the same synced folder produce identical bytes and the second writes nothing, so there is no conflict to raise — and it is what stops the export feeding itself, since assigning a uid rewrites a note, which updates the cache, which triggers another export that finds every uid already present.
 
 Exports are triggered from `main.ts`, debounced, on any cache update and once when the layout is ready — a vault edited while Obsidian was closed has changes the export never saw. The debounce matters because one edit produces several cache updates and a calendar's first export produces one more per event as uids are assigned. An export is never awaited by the thing that triggered it: it is a consequence of a change, not a step in making one.
+
+## Notifications
+
+The export above is the route that works when it matters — when Obsidian is closed and the phone is in a pocket. `core/Notifier.ts` is the other half, and deliberately the lesser one: while Obsidian is open on a desktop, it raises a notification of its own before an event starts. It is off by default, since every calendar carries a lead time whether or not anyone has set it, and an upgrade should not start popping up alerts.
+
+**Nothing is scheduled.** There are no timers per event; `main.ts` ticks every thirty seconds and each tick asks the same question from scratch — what starts soon enough to warn about, given what the cache says right now? A timer set for tomorrow morning is a promise the process cannot keep: Obsidian gets closed, the machine sleeps, the event gets moved or deleted underneath it. Asking again is cheaper than keeping any of that in step.
+
+Both this and the upcoming-list work it shares code with need something the view never did: a flat list of *when things happen*. The view hands rules to FullCalendar and lets the library expand them across whatever is on screen. `calendars/occurrences.ts` answers that question directly — a window in, the occurrences inside it out, nothing stored — which keeps §8's rule intact: the cache holds one event per master and never an expanded occurrence. The timezone convention the `rrule` package imposes lives in that module too, so the render path and the reminder path cannot drift apart about which day a series falls on.
+
+Which events remind, and when, is the same per-calendar `reminderMinutes` the export writes its `VALARM` from — so the desktop and the phone warn you at the same moment about the same event. Calendars the plugin does not own the notes of are left out: a derived calendar is a projection of notes that live in a working calendar, so reminding from both would announce the same event twice. All-day events are left out too — their start is midnight, so a fifteen-minute lead would wake you at a quarter to twelve the night before.
+
+Reminders already shown are remembered by occurrence, not by event, since a series is one event and many reminders; the set is pruned to the window on every tick, so it stays the size of a few minutes of calendar. It is empty after a reload, which means restarting Obsidian shortly before a meeting can show its reminder twice. That is the right way round: a duplicate is an annoyance where a miss is a failure. The window also reaches a minute into the past, so an occurrence that fell due between two ticks — or one with no lead time at all, whose due moment is its start — is still caught.
+
+The tick is registered only on desktop. There is no notification API on mobile and no execution once the app is backgrounded (`PLANNING.md` §7.1), so a timer there would burn battery to no effect.

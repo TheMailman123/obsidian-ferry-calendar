@@ -42,6 +42,15 @@ export interface FerryCalendarSettings {
     calendarSources: CalendarInfo[];
     /** @see DEFAULT_ICS_EXPORT_FOLDER */
     icsExportFolder: string;
+    /**
+     * Whether to raise a desktop notification before an event starts.
+     *
+     * Off by default, and deliberately: every calendar carries a reminder lead
+     * time whether or not anyone has looked at it, so defaulting this on would
+     * have an upgrade start popping up alerts nobody asked for. The lead time
+     * is per calendar and shared with the ICS export — see `Notifier`.
+     */
+    desktopNotifications: boolean;
     defaultCalendar: number;
     firstDay: number;
     initialView: {
@@ -83,6 +92,7 @@ export const DEFAULT_SETTINGS: FerryCalendarSettings = {
     calendarKeyCollapsed: false,
     filenameDateFormat: DEFAULT_FILENAME_DATE_FORMAT,
     icsExportFolder: DEFAULT_ICS_EXPORT_FOLDER,
+    desktopNotifications: false,
 };
 
 const WEEKDAYS = [
@@ -342,6 +352,19 @@ export class FerryCalendarSettingTab extends PluginSettingTab {
                     this.plugin.settings.icsExportFolder =
                         val.trim() || DEFAULT_ICS_EXPORT_FOLDER;
                     await this.plugin.saveSettings();
+                });
+            });
+
+        new Setting(containerEl)
+            .setName("Desktop notifications")
+            .setDesc(
+                "Show a notification before an event starts, using each calendar's reminder time. Only while Obsidian is open on a desktop — on the phone the .ics export is what raises alerts."
+            )
+            .addToggle((toggle) => {
+                toggle.setValue(this.plugin.settings.desktopNotifications);
+                toggle.onChange(async (val) => {
+                    this.plugin.settings.desktopNotifications = val;
+                    await this.plugin.savePreferences();
                 });
             });
 

@@ -159,9 +159,15 @@ const EXPORTABLE = ["local", "dailynote"];
 /**
  * Whether this calendar is exported, and how long before an event to alert.
  *
- * Off by default and per calendar, which PLANNING §7.3 treats as a security
- * boundary: a file that syncs to a phone has left the vault, so it carries only
- * what was deliberately put in it.
+ * The export is off by default and per calendar, which PLANNING §7.3 treats as
+ * a security boundary: a file that syncs to a phone has left the vault, so it
+ * carries only what was deliberately put in it.
+ *
+ * The lead time is shown whether or not the export is on, because it governs
+ * both routes in §7.2 — the `VALARM` written into the `.ics` file for the phone,
+ * and the desktop notification Obsidian raises itself. Hiding it behind the
+ * export toggle would leave desktop reminders firing on a number nobody could
+ * see.
  */
 function ExportSetting({
     source,
@@ -187,29 +193,28 @@ function ExportSetting({
                 />{" "}
                 Export .ics
             </label>
-            {enabled && (
-                <span style={{ fontSize: "var(--font-ui-smaller)" }}>
-                    {" "}
-                    <input
-                        type="number"
-                        min={0}
-                        value={minutes}
-                        style={{ width: "4rem", marginLeft: 4 }}
-                        onChange={(e) =>
-                            onExportChange({
-                                // An empty box means no alarm rather than zero
-                                // minutes, which would alert as the event
-                                // starts and read as a bug.
-                                reminderMinutes:
-                                    e.target.value === ""
-                                        ? null
-                                        : Number(e.target.value),
-                            })
-                        }
-                    />{" "}
-                    min before
-                </span>
-            )}
+            <span style={{ fontSize: "var(--font-ui-smaller)" }}>
+                {" "}
+                remind
+                <input
+                    type="number"
+                    min={0}
+                    value={minutes}
+                    style={{ width: "4rem", marginLeft: 4 }}
+                    onChange={(e) =>
+                        onExportChange({
+                            // An empty box means no alarm rather than zero
+                            // minutes, which would alert as the event starts
+                            // and read as a bug.
+                            reminderMinutes:
+                                e.target.value === ""
+                                    ? null
+                                    : Number(e.target.value),
+                        })
+                    }
+                />{" "}
+                min before
+            </span>
         </div>
     );
 }
