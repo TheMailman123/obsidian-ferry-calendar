@@ -103,6 +103,36 @@ describe("single events", () => {
         expect(found).toHaveLength(1);
     });
 
+    it("runs a timed event to its end date, not to the end of its start time", () => {
+        const overnight = entry("1", {
+            title: "Ferry",
+            date: "2026-03-17",
+            startTime: "22:00",
+            endDate: "2026-03-18",
+            endTime: "06:00",
+        });
+
+        // Subtracting the times would give minus sixteen hours and drop the
+        // end altogether; the crossing really does finish the next morning.
+        const found = occurrencesInWindow(
+            [overnight],
+            at("2026-03-17T00:00"),
+            at("2026-03-18T00:00")
+        );
+        expect(found[0].end?.toISO({ suppressMilliseconds: true })).toBe(
+            "2026-03-18T06:00:00+11:00"
+        );
+
+        // And it is still under way in a window that opens after it started.
+        expect(
+            occurrencesInWindow(
+                [overnight],
+                at("2026-03-18T02:00"),
+                at("2026-03-18T03:00")
+            )
+        ).toHaveLength(1);
+    });
+
     it("gives an event with no end time a null end rather than inventing one", () => {
         const found = occurrencesInWindow(
             [
@@ -256,6 +286,41 @@ describe("recurring events", () => {
         } finally {
             error.mockRestore();
         }
+    });
+});
+
+describe("events that cannot be read", () => {
+    it("leaves out an unreadable rule rather than throwing", () => {
+        const broken: StoredEntry = {
+            id: "broken",
+            calendarId: "cal",
+            // Not built through `parseEvent`: this is the shape a remote
+            // calendar or a hand-edited note produces, and the point is that
+            // nothing has vetted the rule.
+            event: {
+                title: "Nonsense",
+                type: "rrule",
+                allDay: true,
+                rrule: "FREQ=NOTAFREQ",
+                startDate: "2026-03-17",
+                skipDates: [],
+            } as unknown as FerryEvent,
+        };
+        const good = entry("good", {
+            title: "Standup",
+            date: "2026-03-17",
+            startTime: "09:00",
+        });
+
+        const found = occurrencesInWindow(
+            [broken, good],
+            at("2026-03-17T00:00"),
+            at("2026-03-18T00:00")
+        );
+
+        // The broken event is absent and the good one still answered — one
+        // unreadable rule must not silence the rest of the calendar.
+        expect(found.map((o) => o.event.title)).toEqual(["Standup"]);
     });
 });
 

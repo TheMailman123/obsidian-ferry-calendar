@@ -1,6 +1,5 @@
 import { EventApi, EventInput } from "@fullcalendar/core";
 import { FerryEvent } from "../types";
-import { compileRecurrence } from "../calendars/recurrence";
 
 import { DateTime, Duration } from "luxon";
 import { rrulestr } from "rrule";

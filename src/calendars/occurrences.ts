@@ -196,6 +196,35 @@ function durationOf(event: FerryEvent): Duration | null {
 }
 
 /**
+ * When a timed single event finishes.
+ *
+ * Read from `endDate` where there is one rather than from the length of the
+ * day it starts on, because a single event is allowed to run past midnight —
+ * a ferry leaving at 22:00 and arriving at 06:00 is one event, not two, and
+ * subtracting its times gives eight hours *backwards*. `ui/interop.ts` reads
+ * the pair the same way, which is what makes an occurrence agree with what the
+ * calendar draws.
+ *
+ * A series cannot do this: `endDate` names one day, and a rule generates many,
+ * so a repeating event's length comes from `durationOf` instead.
+ *
+ * @returns The end, or null for an event that says only when it starts, or
+ * whose end is not after its start and so cannot be believed.
+ */
+function timedEnd(event: FerryEvent, start: DateTime): DateTime | null {
+    if (event.allDay || event.type !== "single" || !event.endTime) {
+        return null;
+    }
+    const time = parseTime(event.endTime);
+    const day = DateTime.fromISO(event.endDate ?? event.date);
+    if (!time || !day.isValid) {
+        return null;
+    }
+    const end = day.plus(time);
+    return end > start ? end : null;
+}
+
+/**
  * A wall-clock reading of a moment, for handing to or taking from `rrule`.
  *
  * The components are preserved and the zone is relabelled, never converted —
@@ -237,8 +266,7 @@ function singleOccurrences(
             return [];
         }
         start = day.plus(time);
-        const duration = durationOf(event);
-        end = duration ? start.plus(duration) : null;
+        end = timedEnd(event, start);
     }
     if (!start.isValid) {
         return [];
@@ -294,11 +322,28 @@ function recurringOccurrences(
 
     // The window is handed over in the same wall-clock terms the rule answers
     // in, or the first and last day of the range would be off by the offset.
-    const expanded = rrulestr(recurrence.rule, { dtstart }).between(
-        asWallClock(from).toJSDate(),
-        asWallClock(to).toJSDate(),
-        true
-    );
+    let expanded: Date[];
+    try {
+        expanded = rrulestr(recurrence.rule, { dtstart }).between(
+            asWallClock(from).toJSDate(),
+            asWallClock(to).toJSDate(),
+            true
+        );
+    } catch (e) {
+        // A `recurring` block was compiled and checked on the way in, but an
+        // `rrule` is a raw string — hand-written, or parsed out of a remote
+        // calendar — and `rrulestr` throws on one it cannot read. Thrown from
+        // here it would take every other event's occurrences with it, and this
+        // is called from a timer where nothing is waiting to catch it.
+        console.error(
+            `FC: '${
+                event.title
+            }' has a recurrence rule that cannot be read, so it has been left out: ${
+                e instanceof Error ? e.message : String(e)
+            }`
+        );
+        return [];
+    }
 
     return expanded.flatMap((occurrence) => {
         const wall = DateTime.fromJSDate(occurrence, { zone: "utc" });
