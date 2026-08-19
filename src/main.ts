@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Plugin, TFile } from "obsidian";
+import { MarkdownView, Notice, Plugin, TFile, debounce } from "obsidian";
 import {
     CalendarView,
     FERRY_CALENDAR_SIDEBAR_VIEW_TYPE,
@@ -13,6 +13,7 @@ import {
 } from "./ui/settings";
 import { PLUGIN_SLUG } from "./types";
 import EventCache from "./core/EventCache";
+import IcsExporter from "./core/IcsExporter";
 import { ObsidianIO } from "./ObsidianAdapter";
 import { launchCreateModal } from "./ui/event_modal";
 import FullNoteCalendar from "./calendars/FullNoteCalendar";
@@ -81,6 +82,41 @@ export default class FerryCalendarPlugin extends Plugin {
     renderCalendar = renderCalendar;
     processFrontmatter = toEventInput;
 
+    /**
+     * Writes the enabled calendars out as `.ics` files.
+     *
+     * The export folder is passed as a function rather than a value so that
+     * changing the setting takes effect without reloading the plugin.
+     */
+    private exporter: IcsExporter = new IcsExporter(
+        this.cache,
+        new ObsidianIO(this.app),
+        () => this.settings.icsExportFolder
+    );
+
+    /**
+     * Export once the vault has settled, rather than on every cache update.
+     *
+     * A single edit produces several updates — the write itself, the metadata
+     * change it causes, and on a calendar's first export one more per event as
+     * uids are assigned. Collapsing them into one pass is what keeps this from
+     * rewriting the same file a dozen times for one edit; the exporter's own
+     * content comparison then absorbs whatever still gets through.
+     *
+     * Deliberately not awaited by anything. An export is a consequence of a
+     * change, never a step in making one, and a failing export must not take
+     * the edit that triggered it down with it.
+     */
+    private scheduleExport = debounce(
+        () => {
+            this.exportCalendars().catch((e) =>
+                console.error("Ferry Calendar: could not export calendars", e)
+            );
+        },
+        2000,
+        true
+    );
+
     async activateView() {
         const leaves = this.app.workspace
             .getLeavesOfType(FERRY_CALENDAR_VIEW_TYPE)
@@ -125,6 +161,11 @@ export default class FerryCalendarPlugin extends Plugin {
                 }
             })
         );
+
+        // Every change to any event, including ones made outside the plugin,
+        // arrives here. The export is opt-in per calendar, so for a vault with
+        // none enabled this costs a debounce timer and nothing else.
+        this.cache.on("update", () => this.scheduleExport());
 
         // @ts-ignore
         window.cache = this.cache;
@@ -179,6 +220,17 @@ export default class FerryCalendarPlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "ferry-calendar-export-ics",
+            name: "Export calendars to ICS",
+            callback: () => {
+                this.exportCalendars(true).catch((e) => {
+                    console.error("Ferry Calendar: export failed", e);
+                    new Notice(`Ferry Calendar: export failed. ${e}`);
+                });
+            },
+        });
+
+        this.addCommand({
             id: "ferry-calendar-revalidate",
             name: "Revalidate remote calendars",
             callback: () => {
@@ -228,6 +280,10 @@ export default class FerryCalendarPlugin extends Plugin {
             this.reportFilenameDrift().catch((e) =>
                 console.error("Could not check event filenames", e)
             );
+            // A vault edited while Obsidian was closed has changes the export
+            // never saw. Writing once at startup is what makes the file on
+            // disk true rather than merely up to date with this session.
+            this.scheduleExport();
         });
     }
 
@@ -351,7 +407,45 @@ export default class FerryCalendarPlugin extends Plugin {
         }).open();
     }
 
+    /**
+     * Write the enabled calendars out as `.ics` files.
+     *
+     * @param announce Whether to report the result with a notice. On the
+     * command it is the only feedback there is; on the automatic export it
+     * would be a popup every time an event was dragged.
+     * @returns Paths actually written, which is empty whenever nothing
+     * changed — the ordinary result, not a failure.
+     */
+    async exportCalendars(announce = false): Promise<string[]> {
+        // Exporting a half-built cache would write files describing a vault
+        // that has not finished loading, and the comparison would then read
+        // those as the current truth.
+        if (!this.cache.initialized) {
+            if (announce) {
+                new Notice(
+                    "Ferry Calendar is still loading. Try the export again in a moment."
+                );
+            }
+            return [];
+        }
+
+        const written = await this.exporter.exportAll();
+        if (announce) {
+            new Notice(
+                written.length === 0
+                    ? "Ferry Calendar: exports are already up to date."
+                    : `Ferry Calendar: wrote ${written.length} calendar${
+                          written.length === 1 ? "" : "s"
+                      }.`
+            );
+        }
+        return written;
+    }
+
     onunload() {
+        // A queued export would run against a cache the plugin is tearing
+        // down, and write whatever was left of it over a good file.
+        this.scheduleExport.cancel();
         this.app.workspace.detachLeavesOfType(FERRY_CALENDAR_VIEW_TYPE);
         this.app.workspace.detachLeavesOfType(FERRY_CALENDAR_SIDEBAR_VIEW_TYPE);
     }
