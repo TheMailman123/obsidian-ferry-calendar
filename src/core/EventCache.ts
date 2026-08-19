@@ -98,6 +98,17 @@ export type FerryEventSource = {
 export default class EventCache {
     private calendarInfos: CalendarInfo[] = [];
 
+    /**
+     * The settings row each calendar was built from, by calendar ID.
+     *
+     * Recorded as the calendars are constructed rather than matched up
+     * afterwards. A calendar derives its identity from its own fields, so
+     * anything reconstructing the pairing later has to reimplement that
+     * derivation and then stay in step with it; `init` is holding both halves
+     * already and can simply say so.
+     */
+    private infoByCalendar: Map<string, CalendarInfo> = new Map();
+
     private calendarInitializers: CalendarInitializerMap;
 
     private store = new EventStore();
@@ -139,6 +150,7 @@ export default class EventCache {
         this.calendarInfos = infos;
         this.pkCounter = 0;
         this.calendars.clear();
+        this.infoByCalendar.clear();
         this.store.clear();
         this.lastOverriddenOccurrences.clear();
         this.resync();
@@ -149,9 +161,12 @@ export default class EventCache {
         this.calendarInfos
             .flatMap((s) => {
                 const cal = this.calendarInitializers[s.type](s);
-                return cal || [];
+                return cal ? [[s, cal] as const] : [];
             })
-            .forEach((cal) => this.calendars.set(cal.id, cal));
+            .forEach(([info, cal]) => {
+                this.calendars.set(cal.id, cal);
+                this.infoByCalendar.set(cal.id, info);
+            });
     }
 
     /**
@@ -226,6 +241,66 @@ export default class EventCache {
     }
 
     /**
+     * The settings row a calendar was built from.
+     *
+     * @param calendarId ID of the calendar, as keyed in `calendars`.
+     * @returns The info, or undefined for a calendar the cache did not build.
+     */
+    infoFor(calendarId: string): CalendarInfo | undefined {
+        return this.infoByCalendar.get(calendarId);
+    }
+
+    /**
+     * Every event stored against a calendar.
+     *
+     * Locations are stripped for the same reason `getAllEvents` strips them:
+     * where a note sits on disk is the cache's business and no caller's.
+     *
+     * @param calendarId ID of the calendar to read.
+     * @returns Event IDs and events, in no particular order. Empty for an
+     * unknown calendar rather than an error, since a caller iterating the
+     * calendars it got from the cache cannot pass one that does not exist.
+     */
+    eventsInCalendar(calendarId: string): { id: string; event: FerryEvent }[] {
+        return (this.store.eventsByCalendar.get(calendarId) ?? []).map(
+            ({ id, event }) => ({ id, event })
+        );
+    }
+
+    /**
+     * The master whose occurrence an override replaces.
+     *
+     * The resolution `overriddenOccurrences` does across the whole store, for
+     * one event: follow `recurringParent` from the note the override lives in
+     * and see what recurring event is stored where it lands. Both callers go
+     * through here so there is one definition of the pairing — the render path
+     * cancels the occurrence, and the ICS export hangs a `RECURRENCE-ID` on
+     * the master's `UID`, and those two must agree about what replaces what.
+     *
+     * @param eventId The override's event ID.
+     * @returns The master's event ID, or null if this event is not an
+     * override, has no note behind it, belongs to a calendar the plugin does
+     * not own, or its `recurringParent` leads nowhere.
+     */
+    masterOf(eventId: string): string | null {
+        const details = this.store.getEventDetails(eventId);
+        if (!details?.location || !isOverride(details.event)) {
+            return null;
+        }
+        const calendar = this.calendars.get(details.calendarId);
+        if (!(calendar instanceof EditableCalendar)) {
+            return null;
+        }
+        return this.masterAt(
+            calendar.resolveLink(
+                details.event.recurringParent,
+                details.location.path
+            ),
+            details.event
+        );
+    }
+
+    /**
      * The occurrences that override notes stand in for, by master event ID.
      *
      * PLANNING §3.2 puts the splice in the expander rather than on disk: an
@@ -250,19 +325,12 @@ export default class EventCache {
      */
     overriddenOccurrences(): Map<string, string[]> {
         const byMaster = new Map<string, string[]>();
-        for (const [calendarId, stored] of this.store.eventsByCalendar) {
-            const calendar = this.calendars.get(calendarId);
-            if (!(calendar instanceof EditableCalendar)) {
-                continue;
-            }
-            for (const { event, location } of stored) {
-                if (!isOverride(event) || !location) {
+        for (const stored of this.store.eventsByCalendar.values()) {
+            for (const { id, event } of stored) {
+                if (!isOverride(event)) {
                     continue;
                 }
-                const masterId = this.masterAt(
-                    calendar.resolveLink(event.recurringParent, location.path),
-                    event
-                );
+                const masterId = this.masterOf(id);
                 if (masterId === null) {
                     continue;
                 }
