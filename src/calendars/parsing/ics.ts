@@ -1,6 +1,7 @@
 import ical from "ical.js";
 import { FerryEvent, validateEvent } from "../../types";
 import { DateTime } from "luxon";
+import { inclusiveEndDate } from "../end_date";
 import { rrulestr } from "rrule";
 
 function getDate(t: ical.Time): string {
@@ -71,11 +72,16 @@ function icsToOFC(input: ical.Event): FerryEvent {
         };
     } else {
         const date = getDate(input.startDate);
-        const endDate =
+        const allDay = input.startDate.isDate;
+        // A date-valued DTEND is exclusive per RFC 5545 — an event on the 24th
+        // alone arrives as DTEND 25 — while `endDate` names the last day
+        // covered. See `calendars/end_date.ts`.
+        const rawEndDate =
             specifiesEnd(input) && input.endDate
                 ? getDate(input.endDate)
                 : undefined;
-        const allDay = input.startDate.isDate;
+        const endDate =
+            allDay && rawEndDate ? inclusiveEndDate(rawEndDate) : rawEndDate;
         return {
             type: "single",
             id: `ics::${input.uid}::${date}::single`,

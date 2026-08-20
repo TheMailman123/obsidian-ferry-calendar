@@ -13,6 +13,7 @@ import {
     parseTime,
     recurrenceOf,
 } from "../calendars/occurrences";
+import { exclusiveEndDate, inclusiveEndDate } from "../calendars/end_date";
 
 /*
  * Functions for converting between the types used by the fullcalendar.io view library and the
@@ -82,13 +83,22 @@ export function occurrenceDate(start: Date): string {
     return getDate(start);
 }
 
+/**
+ * Build the stored shape of an event from a selection's two endpoints.
+ *
+ * @param start Selection start.
+ * @param end Selection end, as FullCalendar gives it — **exclusive** for an
+ * all-day selection, so it is pulled back a day to the inclusive `endDate` the
+ * note stores. See `calendars/end_date.ts`.
+ * @param allDay Whether the selection was made in an all-day row.
+ */
 export function dateEndpointsToFrontmatter(
     start: Date,
     end: Date,
     allDay: boolean
 ): Partial<FerryEvent> {
     const date = getDate(start);
-    const endDate = getDate(end);
+    const endDate = allDay ? inclusiveEndDate(getDate(end)) : getDate(end);
     return {
         type: "single",
         date,
@@ -210,7 +220,10 @@ export function toEventInput(
             event = {
                 ...event,
                 start: frontmatter.date,
-                end: frontmatter.endDate || undefined,
+                // Stored inclusively, rendered exclusively.
+                end: frontmatter.endDate
+                    ? exclusiveEndDate(frontmatter.endDate)
+                    : undefined,
                 extendedProps: {
                     isTask:
                         frontmatter.completed !== undefined &&
@@ -240,7 +253,10 @@ export function fromEventApi(
     existing: FerryEvent | null = null
 ): FerryEvent {
     const startDate = getDate(event.start as Date);
-    const endDate = getDate(event.end as Date);
+    // FullCalendar's all-day end is exclusive; the note's is not.
+    const rawEndDate = getDate(event.end as Date);
+    const endDate =
+        event.allDay && rawEndDate ? inclusiveEndDate(rawEndDate) : rawEndDate;
     const time = event.allDay
         ? ({ allDay: true } as const)
         : ({

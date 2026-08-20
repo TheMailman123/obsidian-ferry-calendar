@@ -117,9 +117,10 @@ describe("shape: single date projected yearly", () => {
 describe("shape: start and end spanning multiple days", () => {
     const span = mapping({ start: "START_DATE", end: "END_DATE" });
 
-    it("renders the last day of the span", () => {
-        // The note says the record ends on the 10th; an all-day end is
-        // exclusive, so the calendar has to be told the 11th.
+    it("stores the last day of the span as the note gives it", () => {
+        // Both ends are inclusive: the note says the record ends on the 10th
+        // and `endDate` means the same thing. The exclusive end the view wants
+        // is the view's business — see `calendars/end_date.ts`.
         expect(
             mapNoteToEvent(
                 { START_DATE: "2019-06-04", END_DATE: "2019-06-10" },
@@ -133,7 +134,7 @@ describe("shape: start and end spanning multiple days", () => {
                 allDay: true,
                 type: "single",
                 date: "2019-06-04",
-                endDate: "2019-06-11",
+                endDate: "2019-06-10",
             },
         });
     });

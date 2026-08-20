@@ -149,7 +149,7 @@ END:VCALENDAR
   {
     "allDay": true,
     "date": "2022-03-02",
-    "endDate": "2022-03-03",
+    "endDate": null,
     "id": "ics::5r09pnnlktaqivstai5vlbqb1h@google.com::2022-03-02::single",
     "title": "All day event",
     "type": "single",
@@ -188,7 +188,7 @@ END:VCALENDAR
   {
     "allDay": true,
     "date": "2022-02-16",
-    "endDate": "2022-02-17",
+    "endDate": null,
     "id": "ics::7ooluqb717vabebvc9gkc38c9l@google.com::2022-02-16::single",
     "title": "Announce Beta",
     "type": "single",

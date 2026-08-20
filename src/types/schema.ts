@@ -137,6 +137,12 @@ export const EventSchema = z.discriminatedUnion("type", [
     z.object({
         type: z.literal("single"),
         date: ParsedDate,
+        /**
+         * The last day the event covers, **inclusive** — `2026-03-19` on a trip
+         * means the trip runs through the 19th. Everything that renders,
+         * selects or exports it wants an exclusive boundary instead; the shift
+         * belongs to `calendars/end_date.ts` and to nothing else.
+         */
         endDate: ParsedDate.nullable().default(null),
         completed: ParsedDate.or(z.literal(false))
             .or(z.literal(null))

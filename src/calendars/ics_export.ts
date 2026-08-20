@@ -2,6 +2,7 @@ import { DateTime } from "luxon";
 
 import { FerryEvent } from "../types";
 import { compileRecurrence } from "./recurrence";
+import { exclusiveEndDate } from "./end_date";
 
 /**
  * Export of events as an RFC 5545 iCalendar file.
@@ -190,22 +191,15 @@ function utcStamp(moment: DateTime): string {
 }
 
 /**
- * The day after a date, for an exclusive `DTEND`.
+ * `20260318`, for the exclusive `DTEND` of an all-day event ending on the 17th.
  *
  * All-day events end *at* the start of the following day in iCalendar, while
  * ours name the last day they cover. Getting this wrong by one is the classic
- * way to make every all-day event a day longer than it is.
+ * way to make every all-day event a day longer than it is — so the shift comes
+ * from `end_date.ts` rather than being written out again here.
  */
-function dayAfter(date: string): string {
-    const next = DateTime.fromISO(date, { zone: "utc" }).plus({ days: 1 });
-    if (!next.isValid) {
-        throw new Error(
-            `Cannot export an event ending on ${JSON.stringify(
-                date
-            )}: it is not a real date.`
-        );
-    }
-    return next.toFormat("yyyyLLdd");
+function dayAfterStamp(date: string): string {
+    return dateStamp(exclusiveEndDate(date));
 }
 
 /**
@@ -243,7 +237,7 @@ function boundLines(
     if (event.allDay) {
         return [
             `DTSTART;VALUE=DATE:${dateStamp(startDate)}`,
-            `DTEND;VALUE=DATE:${dayAfter(endDate)}`,
+            `DTEND;VALUE=DATE:${dayAfterStamp(endDate)}`,
         ];
     }
     const { start, end } = timedBounds(event, startDate, endDate);

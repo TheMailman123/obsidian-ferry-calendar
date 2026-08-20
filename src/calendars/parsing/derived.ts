@@ -517,35 +517,25 @@ export function mapNoteToEvent(
             ...time,
             type: "single",
             date: start.date,
-            endDate: end ? endDateFor(end.date, start.date, allDay) : null,
+            endDate: end ? endDateFor(end.date, start.date) : null,
         },
     };
 }
 
 /**
- * Convert an end date from the note's terms into the calendar's.
+ * Convert an end date from the source note's terms into the stored event's.
  *
- * A note that records `end: 2019-06-10` means the last day *is* the 10th, while
- * an all-day event's end is exclusive, so the calendar needs the 11th. Getting
- * this wrong drops the final day of every multi-day record — quiet, and wrong
- * on exactly the notes people look at most. Timed events end at a time on the
- * day given, so they pass through untouched.
+ * Both are inclusive — a note recording `end: 2019-06-10` means the last day
+ * *is* the 10th, and that is exactly what `endDate` stores — so this only has
+ * to decide whether an end is worth storing at all. It used to add a day here
+ * to satisfy the exclusive convention the view wanted; the view now does its
+ * own conversion. See `calendars/end_date.ts`.
  *
  * @returns the end date to store, or null when it adds nothing to the start
  */
-function endDateFor(
-    end: string,
-    start: string,
-    allDay: boolean
-): string | null {
-    if (!allDay) {
-        return end === start ? null : end;
-    }
-    if (end === start) {
-        // A single all-day date needs no end at all.
-        return null;
-    }
-    return DateTime.fromISO(end, { zone: "utc" }).plus({ days: 1 }).toISODate();
+function endDateFor(end: string, start: string): string | null {
+    // A single date, all-day or not, needs no end at all.
+    return end === start ? null : end;
 }
 
 /** Counts and samples from mapping a whole folder, for reporting to the user. */
