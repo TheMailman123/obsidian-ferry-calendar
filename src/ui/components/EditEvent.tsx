@@ -12,6 +12,36 @@ import {
     WEEKDAYS,
 } from "../../calendars/recurrence";
 
+/**
+ * What `endDate` should be stored as, given what the form holds.
+ *
+ * Three cases collapse to null, and each is a note that would otherwise carry a
+ * key saying nothing or saying something wrong:
+ *
+ * - blank, which is how a single-day event is expressed;
+ * - equal to the start, which is the same day said twice — and which the
+ *   derived parser and the ICS importer already drop for the same reason;
+ * - any value at all when the event is going into a daily note, because
+ *   `DailyNoteCalendar.modifyEvent` throws on a multi-day event. The field is
+ *   disabled and cleared when that calendar is picked, so this is the backstop
+ *   rather than the mechanism.
+ *
+ * @param endDate The "ends on" input, which may be blank or unset.
+ * @param date The start date input.
+ * @param isDailyNote Whether the chosen calendar is the daily-note one.
+ * @returns The inclusive last day covered, or null for a single-day event.
+ */
+export function endDateToStore(
+    endDate: string | null | undefined,
+    date: string,
+    isDailyNote: boolean
+): string | null {
+    if (isDailyNote || !endDate || endDate === date) {
+        return null;
+    }
+    return endDate;
+}
+
 function makeChangeListener<T>(
     setState: React.Dispatch<React.SetStateAction<T>>,
     fromString: (val: string) => T
@@ -194,6 +224,11 @@ export const EditEvent = ({
 
     const [calendarIndex, setCalendarIndex] = useState(defaultCalendarIndex);
 
+    // Daily notes hold one day's events and `DailyNoteCalendar.modifyEvent`
+    // throws on anything spanning more than that. Offering a field that is
+    // accepted and then rejected on save is worse than not offering it.
+    const isDailyNote = calendars[calendarIndex]?.type === "dailynote";
+
     const [complete, setComplete] = useState(
         initialEvent?.type === "single" &&
             initialEvent.completed !== null &&
@@ -262,7 +297,11 @@ export const EditEvent = ({
                     : {
                           type: "single",
                           date: date || "",
-                          endDate: endDate || null,
+                          endDate: endDateToStore(
+                              endDate,
+                              date || "",
+                              isDailyNote
+                          ),
                           completed: isTask ? complete : null,
                       }),
             },
@@ -294,10 +333,15 @@ export const EditEvent = ({
                     <select
                         id="calendar"
                         value={calendarIndex}
-                        onChange={makeChangeListener(
-                            setCalendarIndex,
-                            parseInt
-                        )}
+                        onChange={(e) => {
+                            const chosen = parseInt(e.target.value);
+                            setCalendarIndex(chosen);
+                            // Cleared in front of the user rather than dropped
+                            // quietly at save time.
+                            if (calendars[chosen]?.type === "dailynote") {
+                                setEndDate(undefined);
+                            }
+                        }}
                     >
                         {calendars
                             .flatMap((cal) =>
@@ -326,14 +370,34 @@ export const EditEvent = ({
                 </p>
                 <p>
                     {!isRecurring && (
-                        <input
-                            type="date"
-                            id="date"
-                            value={date}
-                            required
-                            // @ts-ignore
-                            onChange={makeChangeListener(setDate, (x) => x)}
-                        />
+                        <>
+                            <input
+                                type="date"
+                                id="date"
+                                value={date}
+                                required
+                                // @ts-ignore
+                                onChange={makeChangeListener(setDate, (x) => x)}
+                            />
+                            {" – "}
+                            <input
+                                type="date"
+                                id="endDate"
+                                value={endDate ?? ""}
+                                // Inclusive, so the same day is a valid end and
+                                // simply means a single-day event.
+                                min={date}
+                                disabled={isDailyNote}
+                                title={
+                                    isDailyNote
+                                        ? "A daily note holds one day, so it cannot store a multi-day event."
+                                        : "Ends on — leave blank for a single-day event."
+                                }
+                                onChange={(e) =>
+                                    setEndDate(e.target.value || undefined)
+                                }
+                            />
+                        </>
                     )}
 
                     {allDay ? (
@@ -498,7 +562,7 @@ export const EditEvent = ({
                                     </label>
                                     <input
                                         type="date"
-                                        id="endDate"
+                                        id="endRecur"
                                         value={endRecur}
                                         disabled={endMode !== "until"}
                                         required={endMode === "until"}
