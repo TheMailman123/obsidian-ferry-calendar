@@ -374,3 +374,101 @@ describe("removing keys", () => {
         ).toThrow("being both written and removed");
     });
 });
+
+describe("quoting values that YAML would not read back as strings", () => {
+    // PLANNING §13.2. The writer emitted every string raw, which was survivable
+    // while the plugin only wrote titles, dates and times, and stopped being
+    // survivable the moment it wrote a wikilink.
+
+    it("quotes a wikilink, which is otherwise a nested sequence", () => {
+        expect(
+            newFrontmatter({
+                recurringParent:
+                    "[[CALENDARS/SOCIAL/_recurring/20260818_yeep]]",
+            })
+        ).toBe(
+            [
+                "---",
+                'recurringParent: "[[CALENDARS/SOCIAL/_recurring/20260818_yeep]]"',
+                "---",
+                "",
+            ].join("\n")
+        );
+    });
+
+    it("quotes a title containing a colon, which would break the whole block", () => {
+        // Not one field: `title: Meeting: budget` is a YAML syntax error, so
+        // every other key in the note goes with it.
+        expect(newFrontmatter({ title: "Meeting: budget" })).toContain(
+            'title: "Meeting: budget"'
+        );
+    });
+
+    it("quotes values YAML resolves to a number, boolean or null", () => {
+        const written = newFrontmatter({
+            numeric: "2026",
+            bool: "No",
+            nothing: "null",
+        });
+        expect(written).toContain('numeric: "2026"');
+        expect(written).toContain('bool: "No"');
+        expect(written).toContain('nothing: "null"');
+    });
+
+    it("quotes a value opening with a comment or an indicator", () => {
+        const written = newFrontmatter({
+            hash: "#1 priority",
+            dash: "- leading dash",
+            trailing: "ends with colon:",
+        });
+        expect(written).toContain('hash: "#1 priority"');
+        expect(written).toContain('dash: "- leading dash"');
+        expect(written).toContain('trailing: "ends with colon:"');
+    });
+
+    it("escapes quotes and backslashes it has to write", () => {
+        expect(newFrontmatter({ title: 'a "b" \\ c: d' })).toContain(
+            'title: "a \\"b\\" \\\\ c: d"'
+        );
+    });
+
+    it("quotes list elements that need it, in the flow context's terms", () => {
+        // A comma or a bracket ends a scalar early inside `[...]` even though
+        // it would be harmless on a line of its own.
+        expect(
+            newFrontmatter({ skipDates: ["2026-03-26", "20260402", "a,b"] })
+        ).toContain('skipDates: [2026-03-26,"20260402","a,b"]');
+    });
+
+    it("leaves alone everything that already round-trips", () => {
+        // The predicate is "would the bare form read back as this string", not
+        // "might this be risky": quoting more would rewrite every note in the
+        // vault on its next save for no correctness gain.
+        expect(
+            newFrontmatter({
+                title: "Games Night, Owens",
+                allDay: false,
+                startTime: "11:00",
+                date: "2022-01-01",
+                endDate: null,
+                completed: null,
+                byDay: ["TU", "TH"],
+                quoted: 'He said "hi"',
+            })
+        ).toBe(
+            [
+                "---",
+                "title: Games Night, Owens",
+                "allDay: false",
+                "startTime: 11:00",
+                "date: 2022-01-01",
+                "endDate: null",
+                "completed: null",
+                "byDay: [TU,TH]",
+                'quoted: He said "hi"',
+                "---",
+                "",
+            ].join("\n")
+        );
+    });
+});

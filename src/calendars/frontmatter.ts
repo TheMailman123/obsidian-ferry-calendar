@@ -102,21 +102,110 @@ function isBlock(v: PrintableAtom): v is PrintableBlock {
 }
 
 /**
+ * Plain scalars that YAML resolves to something other than a string.
+ *
+ * A title of `2026` comes back as a number and a title of `true` as a boolean,
+ * and either way `z.string()` rejects it and the note stops being an event.
+ *
+ * The word-shaped booleans — `No`, `on`, `y` — are YAML **1.1**, and the parser
+ * Obsidian uses reads them as strings, so quoting them is not required today.
+ * They are quoted anyway: a vault is read by more than this plugin, the set
+ * costs a pair of quotes on titles nobody writes, and the failure it guards
+ * against is a note silently leaving the calendar.
+ *
+ * Deliberately *not* matching date- or time-shaped values: `2026-08-26` and
+ * `12:30` are written bare today, come back as strings, and quoting them would
+ * rewrite `date:`, `startTime:` and `endTime:` in every note in the vault on
+ * its next save. Churn in someone's git history is a real cost, and there is
+ * no correctness gain to weigh against it.
+ */
+const RESOLVES_TO_NON_STRING =
+    /^(?:true|false|yes|no|on|off|y|n|null|~|[-+]?\d+(?:\.\d*)?(?:[eE][-+]?\d+)?|[-+]?\.(?:inf|nan))$/i;
+
+/**
+ * Indicators that change what a plain scalar means when they open it.
+ *
+ * `[` is the one that mattered: an unquoted `[[link]]` is a flow sequence
+ * nested in a flow sequence, so `recurringParent` came back as
+ * `[["path/to/master"]]` and every override note silently stopped being an
+ * event. See PLANNING §13.2.
+ */
+const OPENING_INDICATOR = /^[-?:,[\]{}#&*!|>'"%@`]/;
+
+/** Characters that end a plain scalar early inside a flow sequence. */
+const FLOW_TERMINATOR = /[,[\]{}]/;
+
+/**
+ * Whether a string has to be quoted to survive the round-trip through YAML.
+ *
+ * The predicate is "would the bare form read back as this same string", not
+ * "might this be risky" — anything broader would requote values that already
+ * work and rewrite the whole vault to no end.
+ *
+ * @param v The string to write.
+ * @param inFlow Whether it is going inside a `[...]` list, where a comma or a
+ * bracket terminates the scalar even though it would be harmless on its own
+ * line.
+ */
+function needsQuoting(v: string, inFlow: boolean): boolean {
+    if (v === "" || v !== v.trim()) {
+        return true;
+    }
+    if (OPENING_INDICATOR.test(v)) {
+        return true;
+    }
+    // `: ` opens a nested mapping, and a trailing `:` makes the value a key.
+    if (/:\s/.test(v) || v.endsWith(":")) {
+        return true;
+    }
+    // ` #` opens a comment and swallows the rest of the line.
+    if (/\s#/.test(v)) {
+        return true;
+    }
+    if (/[\x00-\x1f\x7f]/.test(v)) {
+        return true;
+    }
+    if (RESOLVES_TO_NON_STRING.test(v)) {
+        return true;
+    }
+    return inFlow && FLOW_TERMINATOR.test(v);
+}
+
+/** Render a string as a YAML double-quoted scalar. */
+function quoteYamlString(v: string): string {
+    const escaped = v
+        .replace(/\\/g, "\\\\")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, "\\n")
+        .replace(/\r/g, "\\r")
+        .replace(/\t/g, "\\t");
+    return `"${escaped}"`;
+}
+
+/**
  * Render one scalar or list frontmatter value.
  *
  * Lists render in YAML's inline flow style, which keeps them to a single line
  * and so keeps them findable by the modify path.
+ *
+ * Strings are quoted only where the bare form would not read back as itself —
+ * see `needsQuoting`. Numbers, booleans and null are written as they are; they
+ * have no ambiguous form.
+ *
+ * @param inFlow Whether this value sits inside a `[...]` list. Set by the list
+ * branch for its own elements; callers writing a top-level value leave it.
  */
-function stringifyYamlAtom(v: Exclude<PrintableAtom, PrintableBlock>): string {
-    let result = "";
+function stringifyYamlAtom(
+    v: Exclude<PrintableAtom, PrintableBlock>,
+    inFlow = false
+): string {
     if (Array.isArray(v)) {
-        result += "[";
-        result += v.map(stringifyYamlAtom).join(",");
-        result += "]";
-    } else {
-        result += `${v}`;
+        return `[${v.map((el) => stringifyYamlAtom(el, true)).join(",")}]`;
     }
-    return result;
+    if (typeof v === "string") {
+        return needsQuoting(v, inFlow) ? quoteYamlString(v) : v;
+    }
+    return `${v}`;
 }
 
 /**
