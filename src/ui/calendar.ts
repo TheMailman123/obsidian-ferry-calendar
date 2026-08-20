@@ -15,6 +15,8 @@ import listPlugin from "@fullcalendar/list";
 import interactionPlugin from "@fullcalendar/interaction";
 import googleCalendarPlugin from "@fullcalendar/google-calendar";
 import iCalendarPlugin from "@fullcalendar/icalendar";
+import enGbLocale from "@fullcalendar/core/locales/en-gb";
+import { timeFormatFor } from "./time_format";
 
 /*
  * Expand recurrence rules in the terms the rest of the plugin writes them in.
@@ -146,18 +148,24 @@ export function renderCalendar(
             },
         },
         firstDay: settings?.firstDay,
-        ...(settings?.timeFormat24h && {
-            eventTimeFormat: {
-                hour: "numeric",
-                minute: "2-digit",
-                hour12: false,
-            },
-            slotLabelFormat: {
-                hour: "numeric",
-                minute: "2-digit",
-                hour12: false,
-            },
-        }),
+
+        /*
+         * Dates read dd/mm rather than mm/dd.
+         *
+         * Every numeric date on the calendar — the day-grid column headers, the
+         * more-link popover, the list view's side text — is rendered by
+         * `Intl.DateTimeFormat` from a format object whose field order means
+         * nothing; the locale decides the order. So the locale is the one lever
+         * that moves all of them at once, and overriding four format options by
+         * hand would be four places to keep in step and a fifth to forget.
+         *
+         * `firstDay` is unaffected: `en-gb` carries `dow: 1`, but the plugin
+         * always passes an explicit `firstDay` and an explicit option wins.
+         * `timeFormatFor` covers the other thing this locale changes.
+         */
+        locale: enGbLocale,
+        eventTimeFormat: timeFormatFor(settings?.timeFormat24h ?? false),
+        slotLabelFormat: timeFormatFor(settings?.timeFormat24h ?? false),
         eventSources,
         eventClick,
 
