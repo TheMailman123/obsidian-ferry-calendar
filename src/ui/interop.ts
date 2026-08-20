@@ -1,5 +1,6 @@
 import { EventApi, EventInput } from "@fullcalendar/core";
 import { FerryEvent } from "../types";
+import { carryOverFields } from "../types/schema";
 
 import { DateTime, Duration } from "luxon";
 import { rrulestr } from "rrule";
@@ -257,6 +258,10 @@ export function fromEventApi(
     }
 
     return {
+        // What the view cannot express, kept from the note. An override nudged
+        // by five minutes must still be an override, or the master starts
+        // drawing the occurrence it stands in for. See `carryOverFields`.
+        ...carryOverFields(existing, "single"),
         title: event.title,
         ...time,
         type: "single",

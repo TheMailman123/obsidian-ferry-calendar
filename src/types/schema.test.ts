@@ -9,6 +9,7 @@ import {
     TimeSchema,
     parseEvent,
     serializeEvent,
+    carryOverFields,
 } from "./schema";
 import fc from "fast-check";
 import { ZodFastCheck } from "zod-fast-check";
@@ -656,5 +657,54 @@ describe("reading an override written before wikilinks were quoted", () => {
 
     it("still rejects a value that is neither a link nor that shape", () => {
         expect(() => parseEvent({ ...written, recurringParent: 42 })).toThrow();
+    });
+});
+
+describe("carryOverFields", () => {
+    const override = {
+        type: "single" as const,
+        recurrenceId: "2026-08-28",
+        recurringParent: "[[master]]",
+        uid: "abc123",
+    };
+
+    it("carries the override pair onto a single event", () => {
+        expect(carryOverFields(override, "single")).toEqual({
+            uid: "abc123",
+            recurrenceId: "2026-08-28",
+            recurringParent: "[[master]]",
+        });
+    });
+
+    it("drops the override pair when the event becomes a series", () => {
+        // A series cannot stand in for one occurrence of another, and writing
+        // the keys onto a recurring note would leave it claiming to.
+        expect(carryOverFields(override, "recurring")).toEqual({
+            uid: "abc123",
+        });
+    });
+
+    it("carries uid but never id", () => {
+        // `id` is a cache-level identifier this plugin does not write into a
+        // working-calendar note; carrying it would start adding a key.
+        expect(carryOverFields({ uid: "u", id: "3" } as any, "single")).toEqual(
+            {
+                uid: "u",
+            }
+        );
+    });
+
+    it("carries nothing from half an override", () => {
+        expect(
+            carryOverFields(
+                { type: "single", recurrenceId: "2026-08-28" },
+                "single"
+            )
+        ).toEqual({});
+    });
+
+    it("carries nothing when there is no stored event", () => {
+        expect(carryOverFields(null, "single")).toEqual({});
+        expect(carryOverFields(undefined, "single")).toEqual({});
     });
 });

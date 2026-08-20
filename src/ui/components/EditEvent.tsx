@@ -2,6 +2,7 @@ import { DateTime } from "luxon";
 import * as React from "react";
 import { useEffect, useRef, useState } from "react";
 import { CalendarInfo, FerryEvent } from "../../types";
+import { carryOverFields } from "../../types/schema";
 import {
     FREQUENCIES,
     Frequency,
@@ -218,6 +219,13 @@ export const EditEvent = ({
         e.preventDefault();
         await submit(
             {
+                // Same reason as the drag path: a form knows what is in its
+                // inputs and nothing else, so the note's own fields are carried
+                // rather than rebuilt. See `carryOverFields`.
+                ...carryOverFields(
+                    initialEvent,
+                    isRecurring ? "recurring" : "single"
+                ),
                 ...{ title },
                 ...(allDay
                     ? { allDay: true }

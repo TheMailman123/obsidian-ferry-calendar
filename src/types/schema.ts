@@ -225,6 +225,62 @@ export function isOverride(
 }
 
 /**
+ * Fields a stored event carries that no editing surface can express.
+ *
+ * A drag knows where it dropped something; a form knows what is in its inputs.
+ * Neither knows that the note it is editing stands in for one occurrence of a
+ * series, or what identity the ICS export gave it — so both used to rebuild the
+ * event from what they *did* know and silently drop the rest.
+ *
+ * For an override that was fatal rather than untidy. Dropping the pair does not
+ * merely lose two keys: `replacedKeys` then lists them as obsolete and the write
+ * path **removes them from the note**, so nudging a moved occurrence by five
+ * minutes detached it from its series permanently and the master started drawing
+ * the occurrence again. See PLANNING §13.2.
+ *
+ * `id` is deliberately not carried. It is a cache-level identifier that this
+ * plugin does not write into a working-calendar note, and carrying it would
+ * start adding an `id:` key to notes that have never had one. `uid` is the
+ * opposite case — deliberately persisted, and stable for the life of the event,
+ * so losing it would make the next export look like a fresh set of events.
+ *
+ * @param existing The event as it is stored, or null when there is none —
+ * creating rather than editing, and there is nothing to carry.
+ * @param into The variant the edit produces. The override pair travels only
+ * onto a single event: a series cannot stand in for one occurrence of another,
+ * and writing the keys onto a recurring note would leave it claiming to.
+ */
+export function carryOverFields(
+    existing: Partial<FerryEvent> | null | undefined,
+    into: FerryEvent["type"]
+): CarriedFields {
+    if (!existing) {
+        return {};
+    }
+    const carried: CarriedFields = {};
+    if (existing.uid !== undefined) {
+        carried.uid = existing.uid;
+    }
+    if (
+        into === "single" &&
+        existing.type === "single" &&
+        existing.recurrenceId !== undefined &&
+        existing.recurringParent !== undefined
+    ) {
+        carried.recurrenceId = existing.recurrenceId;
+        carried.recurringParent = existing.recurringParent;
+    }
+    return carried;
+}
+
+/** @see carryOverFields */
+export type CarriedFields = {
+    uid?: string;
+    recurrenceId?: string;
+    recurringParent?: string;
+};
+
+/**
  * Reject half an override.
  *
  * `recurrenceId` says which occurrence is replaced and `recurringParent` says
