@@ -843,3 +843,104 @@ describe("Note Calendar Tests", () => {
         );
     });
 });
+
+describe("descriptions", () => {
+    /**
+     * The plugin's only write into a note's body — PLANNING §13.6.
+     *
+     * Read lazily, so nothing here is exercised on load; and the section is
+     * the only part of the body the plugin owns, so what these pin most is
+     * what survives around it.
+     */
+    const event = {
+        title: "Test Event",
+        allDay: true,
+        date: "2022-01-01",
+        endDate: null,
+    };
+    const filename = "20220101_Test_Event.md";
+    const path = join("events", filename);
+
+    const calendarOver = (body: string) => {
+        const obsidian = makeApp(
+            MockAppBuilder.make()
+                .folder(
+                    new MockAppBuilder("events").file(
+                        filename,
+                        new FileBuilder().frontmatter(event).text(body)
+                    )
+                )
+                .done()
+        );
+        return {
+            obsidian,
+            calendar: new FullNoteCalendar(obsidian, color, dirName),
+        };
+    };
+
+    it("says it can hold one", () => {
+        const { calendar } = calendarOver("");
+        expect(calendar.supportsDescription).toBe(true);
+    });
+
+    it("reads the section back", async () => {
+        const { calendar } = calendarOver("# DESCRIPTION\n\nDinner with Sam.");
+        expect(
+            await calendar.readDescription({ path, lineNumber: undefined })
+        ).toBe("Dinner with Sam.");
+    });
+
+    it("is null for a note with no such section", async () => {
+        const { calendar } = calendarOver("Some other notes.");
+        expect(
+            await calendar.readDescription({ path, lineNumber: undefined })
+        ).toBeNull();
+    });
+
+    it("writes the section without disturbing the frontmatter", async () => {
+        const { obsidian, calendar } = calendarOver("Some other notes.");
+        const before = await obsidian.read(
+            obsidian.getAbstractFileByPath(path) as TFile
+        );
+
+        await calendar.writeDescription(
+            { path, lineNumber: undefined },
+            "Dinner with Sam."
+        );
+        const [, rewrite] = (obsidian.rewrite as jest.Mock).mock.calls[0];
+        const after = rewrite(before);
+
+        expect(after).toContain("title: Test Event");
+        expect(after).toContain("Some other notes.");
+        expect(after).toContain("# DESCRIPTION\n\nDinner with Sam.");
+        // The frontmatter block is still exactly one block, at the top.
+        expect(after.indexOf("---")).toBe(0);
+    });
+
+    it("removes the section when given empty text", async () => {
+        const { obsidian, calendar } = calendarOver(
+            "Notes.\n\n# DESCRIPTION\n\nOld."
+        );
+        const before = await obsidian.read(
+            obsidian.getAbstractFileByPath(path) as TFile
+        );
+
+        await calendar.writeDescription({ path, lineNumber: undefined }, "");
+        const [, rewrite] = (obsidian.rewrite as jest.Mock).mock.calls[0];
+        const after = rewrite(before);
+
+        expect(after).not.toContain("DESCRIPTION");
+        expect(after).toContain("Notes.");
+        expect(after).toContain("title: Test Event");
+    });
+
+    it("throws on a note that is not there", async () => {
+        const { calendar } = calendarOver("");
+        await expect(
+            calendar.readDescription({
+                path: join("events", "nope.md"),
+                lineNumber: undefined,
+            })
+        ).rejects.toThrow(/doesn't exist/);
+    });
+});

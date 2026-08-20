@@ -30,10 +30,10 @@ export function launchCreateModal(
             initialEvent: partialEvent,
             calendars,
             defaultCalendarIndex: 0,
-            submit: async (data, calendarIndex) => {
+            submit: async (data, calendarIndex, description) => {
                 const calendarId = calendars[calendarIndex].id;
                 try {
-                    await plugin.cache.addEvent(calendarId, data);
+                    await plugin.cache.addEvent(calendarId, data, description);
                 } catch (e) {
                     if (e instanceof Error) {
                         new Notice("Error when creating event: " + e.message);
@@ -78,12 +78,16 @@ export function launchEditModal(
 
     const calIdx = calendars.findIndex(({ id }) => id === calId);
 
-    new ReactModal(plugin.app, async (closeModal) =>
-        React.createElement(EditEvent, {
+    new ReactModal(plugin.app, async (closeModal) => {
+        // Read here and nowhere else: the note's body is touched only when
+        // somebody opens the modal on it. See PLANNING §13.6.
+        const initialDescription = await plugin.cache.descriptionOf(eventId);
+        return React.createElement(EditEvent, {
             initialEvent: eventToEdit,
+            initialDescription,
             calendars,
             defaultCalendarIndex: calIdx,
-            submit: async (data, calendarIndex) => {
+            submit: async (data, calendarIndex, description) => {
                 try {
                     if (calendarIndex !== calIdx) {
                         await plugin.cache.moveEventToCalendar(
@@ -105,6 +109,11 @@ export function launchEditModal(
                             // one occurrence has to be lifted out of the rule
                             // that generated it.
                             instance: (on) => occurrenceAsSingle(data, on),
+                            // Unchanged text is still passed: the scope may
+                            // send the edit to a note that does not have it
+                            // yet — a fresh override, or the second half of a
+                            // split series.
+                            description,
                         }
                     );
                     if (!modified) {
@@ -142,6 +151,6 @@ export function launchEditModal(
                     }
                 }
             },
-        })
-    ).open();
+        });
+    }).open();
 }

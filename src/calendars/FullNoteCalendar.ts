@@ -19,7 +19,13 @@ import {
     PlannedRename,
     planRepairs,
 } from "./filename_repair";
-import { modifyFrontmatterString, newFrontmatter } from "./frontmatter";
+import {
+    bodyOf,
+    modifyFrontmatterString,
+    newFrontmatter,
+    withBody,
+} from "./frontmatter";
+import { readSection, upsertSection } from "./note_body";
 import { formatWikilink, parseWikilink } from "./links";
 import { tagsFrontmatter } from "./tags";
 
@@ -413,6 +419,42 @@ export default class FullNoteCalendar extends EditableCalendar {
         );
 
         return;
+    }
+
+    /** The section of an event note the description lives under. */
+    private static readonly DESCRIPTION = "DESCRIPTION";
+
+    get supportsDescription(): boolean {
+        return true;
+    }
+
+    async readDescription(location: EventPathLocation): Promise<string | null> {
+        const file = this.app.getFileByPath(location.path);
+        if (!file) {
+            throw new Error(
+                `File ${location.path} either doesn't exist or is a folder.`
+            );
+        }
+        const page = await this.app.read(file);
+        return readSection(bodyOf(page), FullNoteCalendar.DESCRIPTION);
+    }
+
+    async writeDescription(
+        location: EventPathLocation,
+        text: string
+    ): Promise<void> {
+        const file = this.app.getFileByPath(location.path);
+        if (!file) {
+            throw new Error(
+                `File ${location.path} either doesn't exist or is a folder.`
+            );
+        }
+        await this.app.rewrite(file, (page) =>
+            withBody(
+                page,
+                upsertSection(bodyOf(page), FullNoteCalendar.DESCRIPTION, text)
+            )
+        );
     }
 
     async move(

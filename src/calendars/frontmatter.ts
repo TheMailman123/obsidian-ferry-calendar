@@ -42,16 +42,36 @@ function extractFrontmatter(page: string): string | null {
 
 /**
  * Remove frontmatter from a page.
+ *
+ * Exported as `bodyOf` because `note_body.ts` edits the half this returns and
+ * neither module should have its own idea of where the fence ends.
+ *
  * @param page Contents of markdown file.
  * @returns Contents of a page without frontmatter.
  */
-function extractPageContents(page: string): string {
+export function bodyOf(page: string): string {
     if (hasFrontmatter(page)) {
         // Frontmatter lives between the first two --- linebreaks.
         return page.split("---").slice(2).join("---");
     } else {
         return page;
     }
+}
+
+/**
+ * Replace a page's body, keeping its frontmatter exactly as it stands.
+ *
+ * The mirror of `bodyOf`, so a note whose body has been edited can be put back
+ * together without the caller reasoning about the fence.
+ *
+ * @param page Contents of a markdown file.
+ * @param body The replacement body, everything below the frontmatter.
+ */
+export function withBody(page: string, body: string): string {
+    if (!hasFrontmatter(page)) {
+        return body;
+    }
+    return `---${page.split(FRONTMATTER_SEPARATOR)[1]}---${body}`;
 }
 
 /**
@@ -62,7 +82,7 @@ function extractPageContents(page: string): string {
  * and ending in a newline.
  */
 function replaceFrontmatter(page: string, newFrontmatter: string): string {
-    return `---\n${newFrontmatter}---${extractPageContents(page)}`;
+    return `---\n${newFrontmatter}---${bodyOf(page)}`;
 }
 
 /** A value that can appear on the right-hand side of a frontmatter key. */

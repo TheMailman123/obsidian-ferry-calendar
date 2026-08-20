@@ -143,7 +143,15 @@ const DaySelect = ({
 };
 
 interface EditEventProps {
-    submit: (frontmatter: FerryEvent, calendarIndex: number) => Promise<void>;
+    submit: (
+        frontmatter: FerryEvent,
+        calendarIndex: number,
+        /**
+         * The description as the form now holds it, or undefined when the
+         * calendar cannot carry one and the note's body must be left alone.
+         */
+        description: string | undefined
+    ) => Promise<void>;
     readonly calendars: {
         id: string;
         name: string;
@@ -151,12 +159,20 @@ interface EditEventProps {
     }[];
     defaultCalendarIndex: number;
     initialEvent?: Partial<FerryEvent>;
+    /**
+     * The `# DESCRIPTION` section of the note, read once as the modal opened.
+     *
+     * Null for a note that has none, and for a create, where there is no note
+     * yet. It never reaches `FerryEvent` — see PLANNING §13.6.
+     */
+    initialDescription?: string | null;
     open?: () => Promise<void>;
     deleteEvent?: () => Promise<void>;
 }
 
 export const EditEvent = ({
     initialEvent,
+    initialDescription,
     submit,
     open,
     deleteEvent,
@@ -221,6 +237,8 @@ export const EditEvent = ({
     const customRule = initialRecurrence?.rrule;
 
     const [allDay, setAllDay] = useState(initialEvent?.allDay || false);
+
+    const [description, setDescription] = useState(initialDescription ?? "");
 
     const [calendarIndex, setCalendarIndex] = useState(defaultCalendarIndex);
 
@@ -305,7 +323,11 @@ export const EditEvent = ({
                           completed: isTask ? complete : null,
                       }),
             },
-            calendarIndex
+            calendarIndex,
+            // Undefined leaves the note's body alone. A daily-note event is a
+            // list item inside a note the user wrote and has no body of its
+            // own, so there is nothing here to write.
+            isDailyNote ? undefined : description
         );
     };
 
@@ -575,6 +597,20 @@ export const EditEvent = ({
                             </>
                         )}
                     </>
+                )}
+                {!isDailyNote && (
+                    <p>
+                        <label htmlFor="description">Description </label>
+                        <br />
+                        <textarea
+                            id="description"
+                            value={description}
+                            rows={3}
+                            placeholder="Goes in the note under # DESCRIPTION"
+                            style={{ width: "100%", resize: "vertical" }}
+                            onChange={(e) => setDescription(e.target.value)}
+                        />
+                    </p>
                 )}
                 <p>
                     <label htmlFor="task">Task Event </label>

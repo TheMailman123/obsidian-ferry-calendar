@@ -74,4 +74,54 @@ export abstract class EditableCalendar extends VaultCalendar {
      * link or resolves to nothing.
      */
     abstract resolveLink(link: string, fromPath: string): string | null;
+
+    /**
+     * Whether this calendar's events can carry a description.
+     *
+     * False here, and false for anything that does not give an event a note of
+     * its own: a daily-note event is one list item inside a note the user
+     * wrote, and there is no body belonging to it to put a section in. The edit
+     * form asks before it offers the field, because a field that is accepted
+     * and then refused on save is worse than one that is not offered.
+     */
+    get supportsDescription(): boolean {
+        return false;
+    }
+
+    /**
+     * The event's description, from the `# DESCRIPTION` section of its note.
+     *
+     * Read only when something asks — the modal opening, and nothing else. The
+     * description deliberately never enters `FerryEvent`, the cache or the
+     * export: parsing it on load would mean reading every event note's *body*
+     * at startup, where today only the metadata cache is touched. See PLANNING
+     * §13.6.
+     *
+     * @param location Where the event's note is.
+     * @returns The text, `""` for a heading with nothing under it, or null when
+     * the note has no such section — or the calendar cannot hold one.
+     */
+    async readDescription(
+        _location: EventPathLocation
+    ): Promise<string | null> {
+        return null;
+    }
+
+    /**
+     * Set the event's description, adding or removing the section as needed.
+     *
+     * @param location Where the event's note is.
+     * @param text The new text. `""` removes the section; everything outside it
+     * is left exactly as it stands.
+     * @throws On a calendar that cannot hold one. Callers check
+     * `supportsDescription` first.
+     */
+    async writeDescription(
+        _location: EventPathLocation,
+        _text: string
+    ): Promise<void> {
+        throw new Error(
+            `Events in a ${this.type} calendar cannot carry a description.`
+        );
+    }
 }

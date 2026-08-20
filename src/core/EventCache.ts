@@ -588,7 +588,11 @@ export default class EventCache {
      * @param event Event details
      * @returns Returns true if successful, false otherwise.
      */
-    async addEvent(calendarId: string, event: FerryEvent): Promise<boolean> {
+    async addEvent(
+        calendarId: string,
+        event: FerryEvent,
+        description?: string
+    ): Promise<boolean> {
         const calendar = this.calendars.get(calendarId);
         if (!calendar) {
             throw new Error(`Calendar ID ${calendarId} is not registered.`);
@@ -600,6 +604,12 @@ export default class EventCache {
             throw new Error(`Cannot add event to a read-only calendar`);
         }
         const location = await calendar.createEvent(event);
+        if (description !== undefined && calendar.supportsDescription) {
+            await calendar.writeDescription(
+                { path: location.file.path, lineNumber: location.lineNumber },
+                description
+            );
+        }
         const id = this.store.add({
             calendar,
             location,
@@ -637,7 +647,8 @@ export default class EventCache {
     async createOverride(
         masterId: string,
         occurrence: string,
-        edited: FerryEvent
+        edited: FerryEvent,
+        description?: string
     ): Promise<boolean> {
         const { calendar, location } = this.getInfoForEditableEvent(masterId);
         const master = this.store.getEventById(masterId);
@@ -649,7 +660,8 @@ export default class EventCache {
 
         await this.addEvent(
             calendar.id,
-            overrideOf(edited, occurrence, calendar.linkTo(location.path))
+            overrideOf(edited, occurrence, calendar.linkTo(location.path)),
+            description
         );
         return true;
     }
@@ -678,7 +690,8 @@ export default class EventCache {
     async splitSeriesAt(
         masterId: string,
         occurrence: string,
-        edited: FerryEvent
+        edited: FerryEvent,
+        description?: string
     ): Promise<void> {
         const { calendar } = this.getInfoForEditableEvent(masterId);
         const master = this.store.getEventById(masterId);
@@ -698,7 +711,9 @@ export default class EventCache {
         } else {
             await this.updateEventWithId(masterId, capped);
         }
-        await this.addEvent(calendar.id, next);
+        // The capped half keeps the body it already had; the description
+        // given here belongs to the half the user was editing.
+        await this.addEvent(calendar.id, next, description);
     }
 
     /**
@@ -720,7 +735,8 @@ export default class EventCache {
      */
     async updateEventWithId(
         eventId: string,
-        newEvent: FerryEvent
+        newEvent: FerryEvent,
+        description?: string
     ): Promise<boolean> {
         const { calendar, location: oldLocation } =
             this.getInfoForEditableEvent(eventId);
@@ -741,11 +757,44 @@ export default class EventCache {
             }
         );
 
+        if (description !== undefined && calendar.supportsDescription) {
+            // After `modifyEvent`, which is what may have renamed or moved the
+            // note. The store now holds where it actually is.
+            const { location } = this.getInfoForEditableEvent(eventId);
+            await calendar.writeDescription(
+                { path: location.path, lineNumber: location.lineNumber },
+                description
+            );
+        }
+
         this.updateViews(
             [eventId],
             [{ id: eventId, calendarId: calendar.id, event: newEvent }]
         );
         return true;
+    }
+
+    /**
+     * The description of an event, read from its note when asked and not before.
+     *
+     * The one read path for PLANNING §13.6's lazy model: nothing loads a note's
+     * body until the edit modal opens on it, so §8's startup numbers are
+     * unaffected. Exposed on the cache rather than reached for directly, so
+     * `ui` still never touches a `Calendar` — the invariant in `src/README.md`.
+     *
+     * @param eventId ID of the event, which must be one the plugin can edit.
+     * @returns The description text, or null when the note has no such section
+     * or the calendar cannot hold one.
+     */
+    async descriptionOf(eventId: string): Promise<string | null> {
+        const { calendar, location } = this.getInfoForEditableEvent(eventId);
+        if (!calendar.supportsDescription) {
+            return null;
+        }
+        return calendar.readDescription({
+            path: location.path,
+            lineNumber: location.lineNumber,
+        });
     }
 
     /**

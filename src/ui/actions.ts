@@ -85,6 +85,20 @@ export type EventEdits = {
      * can — a drag — dates the note where the user dropped it and ignores this.
      */
     instance: (occurrence: string) => FerryEvent;
+    /**
+     * The description to write into whichever note the edit lands on.
+     *
+     * `undefined` leaves the body alone, which is what a drag means: it never
+     * read the note and has no opinion about its contents. `""` removes the
+     * section. The distinction is the same one `modifyFrontmatterString` draws
+     * between "no opinion" and "delete this".
+     *
+     * Which note it lands on is the scope's answer, not the caller's: under
+     * **This event** it goes on the override being materialised, under **This
+     * and following** on the new second series, and otherwise on the note being
+     * edited.
+     */
+    description?: string;
 };
 
 /**
@@ -126,7 +140,11 @@ export async function modifyEventWithScope(
     }
 
     if (stored.type !== "recurring") {
-        await cache.updateEventWithId(eventId, edits.series());
+        await cache.updateEventWithId(
+            eventId,
+            edits.series(),
+            edits.description
+        );
         return true;
     }
 
@@ -136,7 +154,11 @@ export async function modifyEventWithScope(
     }
 
     if (scope === "all") {
-        await cache.updateEventWithId(eventId, edits.series());
+        await cache.updateEventWithId(
+            eventId,
+            edits.series(),
+            edits.description
+        );
         new Notice(`Updated every occurrence of "${stored.title}".`);
         return true;
     }
@@ -151,7 +173,8 @@ export async function modifyEventWithScope(
         await cache.createOverride(
             eventId,
             occurrence,
-            edits.instance(occurrence)
+            edits.instance(occurrence),
+            edits.description
         );
         new Notice(
             `The occurrence of "${stored.title}" on ${occurrence} is now its own note.`
@@ -159,7 +182,12 @@ export async function modifyEventWithScope(
         return true;
     }
 
-    await cache.splitSeriesAt(eventId, occurrence, edits.series());
+    await cache.splitSeriesAt(
+        eventId,
+        occurrence,
+        edits.series(),
+        edits.description
+    );
     new Notice(`"${stored.title}" changes from ${occurrence} onwards.`);
     return true;
 }
