@@ -7,7 +7,7 @@ import { FileBuilder } from "../../test_helpers/FileBuilder";
 import { FerryEvent } from "src/types";
 import FullNoteCalendar from "./FullNoteCalendar";
 import { parseEvent } from "../types/schema";
-import { RECURRING_DIR } from "./filenames";
+import { DEFAULT_FILENAME_DATE_FORMAT, RECURRING_DIR } from "./filenames";
 
 const makeApp = (app: MockApp): ObsidianInterface => ({
     getAbstractFileByPath: (path) => app.vault.getAbstractFileByPath(path),
@@ -240,6 +240,53 @@ describe("Note Calendar Tests", () => {
             ",
             ]
         `);
+    });
+
+    it("tags a new note with the configured tags", async () => {
+        const obsidian = makeApp(MockAppBuilder.make().done());
+        const calendar = new FullNoteCalendar(
+            obsidian,
+            color,
+            dirName,
+            DEFAULT_FILENAME_DATE_FORMAT,
+            ["INVISIBLE"]
+        );
+        (obsidian.create as jest.Mock).mockReturnValue({
+            path: join(dirName, "20220101_Test_Event.md"),
+        });
+        await calendar.createEvent(
+            parseEvent({
+                title: "Test Event",
+                date: "2022-01-01",
+                endDate: null,
+                allDay: true,
+            })
+        );
+        // A flow sequence, and the tag needs no quoting to survive it.
+        expect((obsidian.create as jest.Mock).mock.calls[0][1]).toContain(
+            "tags: [INVISIBLE]"
+        );
+    });
+
+    it("writes no tags key when none are configured", async () => {
+        // The default. A vault that does not tag its notes should not acquire
+        // an empty `tags:` on every event.
+        const obsidian = makeApp(MockAppBuilder.make().done());
+        const calendar = new FullNoteCalendar(obsidian, color, dirName);
+        (obsidian.create as jest.Mock).mockReturnValue({
+            path: join(dirName, "20220101_Test_Event.md"),
+        });
+        await calendar.createEvent(
+            parseEvent({
+                title: "Test Event",
+                date: "2022-01-01",
+                endDate: null,
+                allDay: true,
+            })
+        );
+        expect((obsidian.create as jest.Mock).mock.calls[0][1]).not.toContain(
+            "tags:"
+        );
     });
 
     it("creates an event under the configured date format", async () => {

@@ -20,6 +20,7 @@ import {
     listPropertiesInDirectory,
     previewDerivedSource,
 } from "src/calendars/derived_preview";
+import { formatTagList, parseTagList } from "src/calendars/tags";
 import {
     DEFAULT_FILENAME_DATE_FORMAT,
     FILENAME_DATE_FORMAT_LABELS,
@@ -59,6 +60,12 @@ export interface FerryCalendarSettings {
     desktopNotifications: boolean;
     defaultCalendar: number;
     firstDay: number;
+    /**
+     * Tag names, without their leading `#`, written onto an event note when the
+     * plugin creates it. Empty by default: which tags a vault wants on its
+     * event notes is that vault's business, not the plugin's.
+     */
+    eventTags: string[];
     initialView: {
         desktop: string;
         mobile: string;
@@ -88,6 +95,7 @@ export const DEFAULT_SETTINGS: FerryCalendarSettings = {
     calendarSources: [],
     defaultCalendar: 0,
     firstDay: 0,
+    eventTags: [],
     initialView: {
         desktop: "timeGridWeek",
         mobile: "timeGrid3Days",
@@ -327,6 +335,30 @@ export class FerryCalendarSettingTab extends PluginSettingTab {
                     // hold the format, so they have to be rebuilt with it.
                     await this.plugin.saveSettings();
                     await this.plugin.reportFilenameDrift();
+                });
+            });
+
+        new Setting(containerEl)
+            .setName("Tags for new event notes")
+            .setDesc(
+                "Tags written into the frontmatter of every event note the plugin creates, separated by commas. " +
+                    "Leave empty for none. Existing notes are not touched, and a note's tags are never rewritten after it is created."
+            )
+            .addText((text) => {
+                text.setPlaceholder("#INVISIBLE");
+                text.setValue(formatTagList(this.plugin.settings.eventTags));
+                text.onChange(async (val) => {
+                    // Persisted on every keystroke, but without the cache
+                    // reset: the calendars are built holding the tag list, and
+                    // rebuilding every calendar once per character typed would
+                    // put a notice on screen ten times for one word.
+                    this.plugin.settings.eventTags = parseTagList(val);
+                    await this.plugin.savePreferences();
+                });
+                // The rebuild that makes the new list take effect, once, when
+                // the user has finished typing it.
+                text.inputEl.addEventListener("blur", async () => {
+                    await this.plugin.saveSettings();
                 });
             });
 

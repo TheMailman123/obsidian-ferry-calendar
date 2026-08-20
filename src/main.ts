@@ -54,7 +54,8 @@ export default class FerryCalendarPlugin extends Plugin {
                       new ObsidianIO(this.app),
                       info.color,
                       info.directory,
-                      this.settings.filenameDateFormat
+                      this.settings.filenameDateFormat,
+                      this.settings.eventTags
                   )
                 : null,
         dailynote: (info) =>

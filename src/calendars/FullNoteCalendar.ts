@@ -21,27 +21,33 @@ import {
 } from "./filename_repair";
 import { modifyFrontmatterString, newFrontmatter } from "./frontmatter";
 import { formatWikilink, parseWikilink } from "./links";
+import { tagsFrontmatter } from "./tags";
 
 export default class FullNoteCalendar extends EditableCalendar {
     app: ObsidianInterface;
     private _directory: string;
     private dateFormat: FilenameDateFormat;
+    private eventTags: string[];
 
     /**
      * @param dateFormat How to render the date prefix of event filenames. A
      * user preference rather than a property of the calendar, passed in so that
      * the naming rules have a single owner.
+     * @param eventTags Tags to write into a note's frontmatter when it is
+     * created, without their leading `#`. Empty by default.
      */
     constructor(
         app: ObsidianInterface,
         color: string,
         directory: string,
-        dateFormat: FilenameDateFormat = DEFAULT_FILENAME_DATE_FORMAT
+        dateFormat: FilenameDateFormat = DEFAULT_FILENAME_DATE_FORMAT,
+        eventTags: string[] = []
     ) {
         super(color);
         this.app = app;
         this._directory = directory;
         this.dateFormat = dateFormat;
+        this.eventTags = eventTags;
     }
     get directory(): string {
         return this._directory;
@@ -307,6 +313,10 @@ export default class FullNoteCalendar extends EditableCalendar {
      * created here if this is the first one. Two events on the same day with
      * the same title are legitimate, so a name that is already taken picks up a
      * `_2`, `_3` suffix rather than refusing the create.
+     *
+     * The configured tags are written here and only here — a note's `tags:` is
+     * never rewritten afterwards, because the writer replaces a key whole and
+     * would destroy whatever else had been added to it.
      */
     async createEvent(event: FerryEvent): Promise<EventLocation> {
         const folder = folderForEvent(this.directory, event);
@@ -315,7 +325,10 @@ export default class FullNoteCalendar extends EditableCalendar {
         const path = `${folder}/${basename}.md`;
         const file = await this.app.create(
             path,
-            newFrontmatter(serializeEvent(event))
+            newFrontmatter({
+                ...serializeEvent(event),
+                ...tagsFrontmatter(this.eventTags),
+            })
         );
         return { file, lineNumber: undefined };
     }
