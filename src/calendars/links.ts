@@ -69,3 +69,41 @@ export function parseWikilink(link: string): string | null {
     const target = inner.split("|")[0].split("#")[0].trim();
     return target.length > 0 ? target : null;
 }
+
+/**
+ * Recover a wikilink from the value YAML produced for an unquoted one.
+ *
+ * Until PLANNING §13.2 was fixed, `formatWikilink`'s output went into
+ * frontmatter unquoted, and `[[path/to/note]]` is a flow sequence nested in a
+ * flow sequence to any YAML parser. So Obsidian handed back
+ * `[["path/to/note"]]` where the schema expects a string, the parse failed, and
+ * the note stopped being an event entirely — silently, since a note that yields
+ * no events is indistinguishable from a note that is not an event.
+ *
+ * Fixing the writer does not fix those notes: their text does not change until
+ * something saves them. So the reader accepts the shape too and normalises it
+ * back, exactly as `parseEvent` accepts the inherited `daysOfWeek` recurrence
+ * shape and converts it. Read tolerantly, write one way. An affected note heals
+ * on its next save and needs no migration command.
+ *
+ * @param value The raw frontmatter value, of whatever type YAML made it.
+ * @returns The wikilink as a string, or null if the value is neither a string
+ * nor the nested-sequence form — in which case the caller's own validation
+ * should reject it and say so.
+ */
+export function wikilinkFromYaml(value: unknown): string | null {
+    if (typeof value === "string") {
+        return value;
+    }
+    // Exactly one element at each level. A comma inside the link would have
+    // split it further, but §4.3 puts no commas in the filenames this points
+    // at, so a wider shape is more likely to be something else entirely.
+    if (!Array.isArray(value) || value.length !== 1) {
+        return null;
+    }
+    const inner = value[0];
+    if (!Array.isArray(inner) || inner.length !== 1) {
+        return null;
+    }
+    return typeof inner[0] === "string" ? `[[${inner[0]}]]` : null;
+}

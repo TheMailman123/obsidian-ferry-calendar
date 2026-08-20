@@ -6,6 +6,21 @@ import {
     WEEKDAYS,
 } from "../calendars/recurrence";
 import { EventFrontmatter } from "../calendars/frontmatter";
+import { wikilinkFromYaml } from "../calendars/links";
+
+/**
+ * A wikilink field, tolerant of the shape an unquoted one used to be read as.
+ *
+ * See `wikilinkFromYaml`: the plugin wrote `[[link]]` into YAML unquoted, which
+ * reads back as a nested sequence rather than a string. Notes written that way
+ * are still in vaults, so the shape is accepted and normalised here rather than
+ * migrated. Anything else falls through to `z.string()` and is rejected with
+ * the ordinary message.
+ */
+const WikilinkSchema = z.preprocess(
+    (value) => wikilinkFromYaml(value) ?? value,
+    z.string()
+);
 
 const stripTime = (date: DateTime) => {
     // Strip time from luxon dateTime.
@@ -133,7 +148,7 @@ export const EventSchema = z.discriminatedUnion("type", [
          */
         recurrenceId: ParsedDate.optional(),
         /** Wikilink to the master whose occurrence this replaces. */
-        recurringParent: z.string().optional(),
+        recurringParent: WikilinkSchema.optional(),
     }),
     z.object({
         type: z.literal("recurring"),

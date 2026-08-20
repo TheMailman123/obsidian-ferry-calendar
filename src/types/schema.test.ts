@@ -626,3 +626,35 @@ describe("schema parsing tests", () => {
         });
     });
 });
+
+describe("reading an override written before wikilinks were quoted", () => {
+    // PLANNING §13.2: the writer emitted `recurringParent: [[path]]` unquoted,
+    // which YAML reads as a sequence nested in a sequence. Fixing the writer
+    // does not change the text of notes already on disk, so the reader accepts
+    // that shape too — the note heals on its next save.
+    const written = {
+        title: "yeep",
+        allDay: false,
+        startTime: "12:30",
+        endTime: "18:30",
+        date: "2026-08-26",
+        endDate: null,
+        recurrenceId: "2026-08-28",
+    };
+
+    it("normalises the nested-sequence form back into a link", () => {
+        const event = parseEvent({
+            ...written,
+            recurringParent: [["CALENDARS/SOCIAL/_recurring/20260818_yeep"]],
+        });
+        expect(event.type).toBe("single");
+        expect((event as any).recurringParent).toBe(
+            "[[CALENDARS/SOCIAL/_recurring/20260818_yeep]]"
+        );
+        expect(isOverride(event)).toBe(true);
+    });
+
+    it("still rejects a value that is neither a link nor that shape", () => {
+        expect(() => parseEvent({ ...written, recurringParent: 42 })).toThrow();
+    });
+});

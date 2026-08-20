@@ -1,4 +1,4 @@
-import { formatWikilink, parseWikilink } from "./links";
+import { formatWikilink, parseWikilink, wikilinkFromYaml } from "./links";
 
 describe("writing a wikilink", () => {
     it("drops the markdown extension", () => {
@@ -67,5 +67,39 @@ describe("reading a wikilink", () => {
         expect(parseWikilink("")).toBeNull();
         expect(parseWikilink("[[]]")).toBeNull();
         expect(parseWikilink("[[#heading]]")).toBeNull();
+    });
+});
+
+describe("wikilinkFromYaml", () => {
+    it("passes a properly quoted link straight through", () => {
+        expect(
+            wikilinkFromYaml("[[CALENDARS/SOCIAL/_recurring/20260818_yeep]]")
+        ).toBe("[[CALENDARS/SOCIAL/_recurring/20260818_yeep]]");
+    });
+
+    it("recovers a link YAML read as a nested sequence", () => {
+        // What Obsidian handed back for an unquoted `recurringParent`, and the
+        // reason every override note written before PLANNING §13.2 was fixed
+        // silently stopped being an event.
+        expect(
+            wikilinkFromYaml([["CALENDARS/SOCIAL/_recurring/20260818_yeep"]])
+        ).toBe("[[CALENDARS/SOCIAL/_recurring/20260818_yeep]]");
+    });
+
+    it("recovers a link carrying an alias", () => {
+        expect(wikilinkFromYaml([["20260317_Gym|the gym"]])).toBe(
+            "[[20260317_Gym|the gym]]"
+        );
+    });
+
+    it("declines anything that is not one of the two shapes", () => {
+        // An ordinary list of strings is somebody's own frontmatter, not a
+        // mangled link, and guessing at it would be worse than rejecting it.
+        expect(wikilinkFromYaml(["a", "b"])).toBeNull();
+        expect(wikilinkFromYaml([["a"], ["b"]])).toBeNull();
+        expect(wikilinkFromYaml([["a", "b"]])).toBeNull();
+        expect(wikilinkFromYaml(42)).toBeNull();
+        expect(wikilinkFromYaml(null)).toBeNull();
+        expect(wikilinkFromYaml(undefined)).toBeNull();
     });
 });
