@@ -265,11 +265,25 @@ export function fromEventApi(
               endTime: getTime(event.end as Date),
           } as const);
 
+    if (existing?.type === "rrule") {
+        // A rule the user wrote out as an RRULE string. The view hands back one
+        // occurrence, and the branch below would turn the note into that single
+        // occurrence — silently destroying the rule. `shiftSeriesTo` refuses
+        // hand-written rules for the same reason.
+        throw new Error(
+            `Cannot edit "${
+                existing.title
+            }" from the calendar: its repeat is written by hand as ${JSON.stringify(
+                existing.rrule
+            )}. Edit that rule in the note.`
+        );
+    }
+
     if (existing?.type === "recurring") {
-        // Moving an occurrence to another day is a per-instance edit, which
-        // needs the "this event / this and following / all events" prompt to
-        // mean anything, so for now the series keeps its rule and the day is
-        // left where the rule puts it.
+        // The rule is kept as it stands and only the time of day comes from the
+        // drag. Which *day* a series falls on is `shiftSeriesTo`'s to change,
+        // and only once the user has said "All events" — this function cannot
+        // know that, because it is handed one occurrence and no scope.
         return { ...existing, ...time };
     }
 

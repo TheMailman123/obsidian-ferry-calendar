@@ -64,8 +64,16 @@ export async function openFileForEvent(
  * user actually did, supplies both.
  */
 export type EventEdits = {
-    /** The edit as it applies to the whole series, rule intact. */
-    series: FerryEvent;
+    /**
+     * The edit as it applies to the whole series, rule moved with it.
+     *
+     * A function for the same reason `instance` is: moving a series means
+     * rewriting its rule, and there are rules that cannot be moved — a
+     * hand-written `rrule` among them. Building it eagerly would throw on a
+     * drag the user was about to scope to one occurrence, which needs no rule
+     * change at all.
+     */
+    series: () => FerryEvent;
     /**
      * The same edit as one ordinary dated event, for an override note.
      *
@@ -118,7 +126,7 @@ export async function modifyEventWithScope(
     }
 
     if (stored.type !== "recurring") {
-        await cache.updateEventWithId(eventId, edits.series);
+        await cache.updateEventWithId(eventId, edits.series());
         return true;
     }
 
@@ -128,7 +136,7 @@ export async function modifyEventWithScope(
     }
 
     if (scope === "all") {
-        await cache.updateEventWithId(eventId, edits.series);
+        await cache.updateEventWithId(eventId, edits.series());
         new Notice(`Updated every occurrence of "${stored.title}".`);
         return true;
     }
@@ -151,7 +159,7 @@ export async function modifyEventWithScope(
         return true;
     }
 
-    await cache.splitSeriesAt(eventId, occurrence, edits.series);
+    await cache.splitSeriesAt(eventId, occurrence, edits.series());
     new Notice(`"${stored.title}" changes from ${occurrence} onwards.`);
     return true;
 }

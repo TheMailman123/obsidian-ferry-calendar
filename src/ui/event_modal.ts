@@ -100,7 +100,7 @@ export function launchEditModal(
                         eventId,
                         occurrence,
                         {
-                            series: data,
+                            series: () => data,
                             // The modal edits the series, so an edit meant for
                             // one occurrence has to be lifted out of the rule
                             // that generated it.

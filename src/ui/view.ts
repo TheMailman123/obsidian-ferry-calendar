@@ -17,6 +17,7 @@ import {
     openFileForEvent,
 } from "./actions";
 import { launchCreateModal, launchEditModal } from "./event_modal";
+import { shiftSeriesTo } from "src/calendars/recurrence_edit";
 import { isTask, toggleTask, unmakeTask } from "src/ui/tasks";
 import { FerryEventSource, UpdateViewCallback } from "src/core/EventCache";
 import {
@@ -354,16 +355,33 @@ export class CalendarView extends ItemView {
                     const existing = this.plugin.cache.getEventById(
                         oldEvent.id
                     );
+                    // Where the drag started, not where it landed: the
+                    // occurrence being replaced is the one the rule generated.
+                    const from = oldEvent.start
+                        ? occurrenceDate(oldEvent.start)
+                        : null;
+                    const to = newEvent.start
+                        ? occurrenceDate(newEvent.start)
+                        : null;
                     return await modifyEventWithScope(
                         this.plugin.cache,
                         this.app,
                         oldEvent.id,
-                        // Where the drag started, not where it landed: the
-                        // occurrence being replaced is the one the rule
-                        // generated.
-                        oldEvent.start ? occurrenceDate(oldEvent.start) : null,
+                        from,
                         {
-                            series: fromEventApi(newEvent, existing),
+                            series: () => {
+                                const moved = fromEventApi(newEvent, existing);
+                                // The day the drag moved to reaches the rule
+                                // only here. `fromEventApi` takes the time of
+                                // day from the drag and keeps the rule as it
+                                // stands, because that is the whole of the
+                                // edit for a series that did not change day.
+                                return existing?.type === "recurring" &&
+                                    from &&
+                                    to
+                                    ? shiftSeriesTo(moved, from, to)
+                                    : moved;
+                            },
                             // Dated where the drag landed, per §9.1, not
                             // at the occurrence it replaces.
                             instance: () => fromEventApi(newEvent),

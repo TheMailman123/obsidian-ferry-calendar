@@ -1,6 +1,7 @@
 import { DateTime } from "luxon";
 
 import { FerryEvent } from "../types";
+import { Weekday, WEEKDAYS } from "./recurrence";
 
 /**
  * Per-instance edits to a recurring series.
@@ -213,7 +214,20 @@ export function occurrenceAsSingle(
     }
     requireIsoDate(date, "The occurrence date");
 
-    const { recurring: _recurring, skipDates: _skipDates, ...rest } = master;
+    // `uid` is dropped with the rule. It is the series' durable identity in
+    // the ICS export, and the override is a different calendar object — one
+    // that the export gives the master's UID *and* a RECURRENCE-ID, which is
+    // what tells a subscriber it replaces an occurrence rather than duplicates
+    // one. Carrying the master's uid onto disk would leave two notes claiming
+    // one identity, and the day the override stopped being an override it
+    // would export as a second event with the series' UID and no
+    // RECURRENCE-ID.
+    const {
+        recurring: _recurring,
+        skipDates: _skipDates,
+        uid: _uid,
+        ...rest
+    } = master;
     return { ...rest, type: "single", date, endDate: null };
 }
 
@@ -241,6 +255,99 @@ export function seriesFrom(edited: FerryEvent, date: string): FerryEvent {
     }
     requireIsoDate(date, "The start date");
 
+    // `uid` goes for the same reason it does in `occurrenceAsSingle`: this is
+    // a second series, not the first one moved, and two masters sharing one
+    // UID is a straightforwardly broken export.
     const { count: _count, ...rest } = edited.recurring;
-    return { ...edited, recurring: { ...rest, start: date } };
+    const { uid: _uid, ...withoutUid } = edited;
+    return { ...withoutUid, recurring: { ...rest, start: date } };
+}
+
+/** The RFC 5545 weekday code a date falls on. */
+function weekdayOf(date: DateTime): Weekday {
+    // Luxon numbers Monday 1 through Sunday 7, which is the order `WEEKDAYS` is
+    // written in.
+    return WEEKDAYS[date.weekday - 1];
+}
+
+/**
+ * Move a whole series, given one occurrence's old and new dates.
+ *
+ * The "All events" answer to a drag. It used to be unimplemented: the rule was
+ * kept wholesale and only the time of day was taken from the drag, so dragging
+ * Tuesday to Wednesday and choosing "All events" left the series on Tuesday at
+ * the new time and said nothing about it.
+ *
+ * **What moves depends on how the series says which days it falls on**, and the
+ * two cases are genuinely different edits:
+ *
+ * - **A weekly rule listing its days** — `byDay: [MO, WE, FR]` — has the dragged
+ *   day *replaced*. Moving Wednesday to Thursday gives `[MO, TH, FR]`. The user
+ *   edited the pattern by example; translating the whole set to `[TU, TH, SA]`
+ *   would move two days they never touched.
+ * - **Everything else** takes the shift on `start`, which is the only thing
+ *   saying which day the rule lands on. A monthly series moved from the 17th to
+ *   the 18th falls on the 18th of every month thereafter.
+ *
+ * `until` and `count` are left alone in both cases. They are an explicit answer
+ * to "when does this stop", and moving one occurrence is not a statement about
+ * that — a series shifted forward past its `until` loses its last occurrence,
+ * which is visible on the calendar rather than silent.
+ *
+ * @param master The series, with any non-date edits from the drag already on it.
+ * @param from The date the dragged occurrence was generated on.
+ * @param to The date it was dropped on.
+ * @returns The series, moved.
+ * @throws If handed anything but a recurring event; if the rule is a
+ * hand-written `rrule`, which this cannot rewrite without parsing a string the
+ * user wrote on purpose; or if `from` is not a day the rule's `byDay` lists,
+ * which means the caller paired the drag with the wrong series.
+ */
+export function shiftSeriesTo(
+    master: FerryEvent,
+    from: string,
+    to: string
+): FerryEvent {
+    if (master.type !== "recurring") {
+        throw notRecurring(master, "move a series");
+    }
+    const fromDate = requireIsoDate(from, "The occurrence date");
+    const toDate = requireIsoDate(to, "The date it moved to");
+
+    if (from === to) {
+        return master;
+    }
+
+    const rule = master.recurring;
+    if (rule.rrule !== undefined) {
+        throw new Error(
+            `Cannot move every occurrence of "${
+                master.title
+            }": its repeat is written by hand as ${JSON.stringify(
+                rule.rrule
+            )}. Edit that rule in the note, or move this occurrence on its own.`
+        );
+    }
+
+    if (rule.freq === "weekly" && rule.byDay && rule.byDay.length > 0) {
+        const was = weekdayOf(fromDate);
+        if (!rule.byDay.includes(was)) {
+            throw new Error(
+                `Cannot move every occurrence of "${master.title}": it does not repeat on ${was}, so ${from} is not an occurrence of it.`
+            );
+        }
+        const now = weekdayOf(toDate);
+        // Deduplicated because dropping one listed day onto another is a
+        // legitimate thing to do, and means the series now has one fewer day.
+        const byDay = [
+            ...new Set(rule.byDay.map((day) => (day === was ? now : day))),
+        ];
+        return { ...master, recurring: { ...rule, byDay } };
+    }
+
+    const days = toDate.diff(fromDate, "days").days;
+    const start = requireIsoDate(rule.start, "The series start")
+        .plus({ days })
+        .toISODate();
+    return { ...master, recurring: { ...rule, start } };
 }
