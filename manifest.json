@@ -1,7 +1,7 @@
 {
 	"id": "ferry-calendar",
 	"name": "Ferry Calendar",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"minAppVersion": "1.0.0",
 	"description": "Calendar views over your notes. In early development.",
 	"author": "TheMailman123",
