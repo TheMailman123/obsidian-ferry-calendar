@@ -21,11 +21,24 @@
  */
 import { DateTime } from "luxon";
 
+/**
+ * A full ISO date and nothing less.
+ *
+ * Checked before parsing because luxon is happy to read `2026-08` as the first
+ * of August and `2026` as New Year's Day, and `endDate` is a hand-authored
+ * field: `ParsedDate` in the schema is `z.string()` and validates nothing, so a
+ * partial date reaches here intact. Shifting one by a day produces a date that
+ * looks entirely plausible and is not what the note says.
+ */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 function shift(date: string, days: number): string {
-    const parsed = DateTime.fromISO(date, { zone: "utc" });
+    const parsed = ISO_DATE.test(date.trim())
+        ? DateTime.fromISO(date.trim(), { zone: "utc" })
+        : DateTime.invalid("not a full ISO date");
     if (!parsed.isValid) {
         throw new Error(
-            `Not an ISO date: '${date}' (${parsed.invalidReason}). ` +
+            `Not an ISO date: ${JSON.stringify(date)}. ` +
                 `An all-day end date must be YYYY-MM-DD.`
         );
     }

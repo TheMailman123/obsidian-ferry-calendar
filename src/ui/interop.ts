@@ -35,6 +35,29 @@ const getTime = (date: Date): string =>
 
 const getDate = (date: Date): string => DateTime.fromJSDate(date).toISODate();
 
+/**
+ * The exclusive end FullCalendar wants, for an `endDate` off a note.
+ *
+ * Null rather than a throw when the value is not a date. `toEventInput` runs
+ * over every event in a source on every render, so throwing here would take a
+ * whole calendar off the screen because one note has `endDate: tomorrow` in it
+ * — and `ParsedDate` is `z.string()`, so the schema lets that through. One bad
+ * note dropping out with an error in the console is the same answer
+ * `combineDateTimeStrings` gives for an unreadable time.
+ */
+const renderableEnd = (endDate: string): string | null => {
+    try {
+        return exclusiveEndDate(endDate);
+    } catch (e) {
+        console.error(
+            `FC: Error reading endDate '${endDate}': ${
+                e instanceof Error ? e.message : e
+            }`
+        );
+        return null;
+    }
+};
+
 const combineDateTimeStrings = (date: string, time: string): string | null => {
     const parsedDate = DateTime.fromISO(date);
     if (parsedDate.invalidReason) {
@@ -98,7 +121,9 @@ export function dateEndpointsToFrontmatter(
     allDay: boolean
 ): Partial<FerryEvent> {
     const date = getDate(start);
-    const endDate = allDay ? inclusiveEndDate(getDate(end)) : getDate(end);
+    const selectedEnd = getDate(end);
+    const endDate =
+        allDay && selectedEnd ? inclusiveEndDate(selectedEnd) : selectedEnd;
     return {
         type: "single",
         date,
@@ -217,13 +242,19 @@ export function toEventInput(
                 },
             };
         } else {
+            let end = undefined;
+            if (frontmatter.endDate) {
+                // Stored inclusively, rendered exclusively.
+                end = renderableEnd(frontmatter.endDate);
+                if (!end) {
+                    return null;
+                }
+            }
+
             event = {
                 ...event,
                 start: frontmatter.date,
-                // Stored inclusively, rendered exclusively.
-                end: frontmatter.endDate
-                    ? exclusiveEndDate(frontmatter.endDate)
-                    : undefined,
+                end,
                 extendedProps: {
                     isTask:
                         frontmatter.completed !== undefined &&

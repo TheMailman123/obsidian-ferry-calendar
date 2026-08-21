@@ -73,6 +73,79 @@ describe("rendering a stored end date", () => {
     });
 });
 
+describe("an endDate the schema let through", () => {
+    // `ParsedDate` is `z.string()` and validates nothing, so `endDate` reaches
+    // the renderer as whatever was typed in the note.
+    const errors = jest.spyOn(console, "error").mockImplementation(() => {});
+    afterAll(() => errors.mockRestore());
+
+    it.each(["tomorrow", "19/03/2026", "2026-13-01", "2026-08"])(
+        "drops the one event rather than throwing, for %s",
+        (endDate) => {
+            // `toEventInput` runs over every event in a source on every render.
+            // A throw here would take the whole calendar off the screen because
+            // one note is wrong, which is the failure mode this pass exists to
+            // stop happening.
+            expect(() =>
+                toEventInput(
+                    "1",
+                    parseEvent({
+                        title: "x",
+                        allDay: true,
+                        date: "2025-12-09",
+                        endDate,
+                    })
+                )
+            ).not.toThrow();
+            expect(
+                toEventInput(
+                    "1",
+                    parseEvent({
+                        title: "x",
+                        allDay: true,
+                        date: "2025-12-09",
+                        endDate,
+                    })
+                )
+            ).toBeNull();
+        }
+    );
+
+    it("says so in the console", () => {
+        errors.mockClear();
+        toEventInput(
+            "1",
+            parseEvent({
+                title: "x",
+                allDay: true,
+                date: "2025-12-09",
+                endDate: "tomorrow",
+            })
+        );
+        expect(errors).toHaveBeenCalledWith(
+            expect.stringContaining("tomorrow")
+        );
+    });
+
+    it("still renders a timed event whose endDate is unreadable", () => {
+        // The timed branch never shifts the date, so there is nothing to fail
+        // on — `combineDateTimeStrings` is what refuses it, as it always did.
+        expect(
+            toEventInput(
+                "1",
+                parseEvent({
+                    title: "x",
+                    allDay: false,
+                    date: "2025-12-09",
+                    endDate: "tomorrow",
+                    startTime: "09:00",
+                    endTime: "10:00",
+                })
+            )
+        ).toBeNull();
+    });
+});
+
 describe("reading an all-day selection back", () => {
     it("stores the last day the selection covered", () => {
         // Selecting the 9th through the 15th hands back the 16th.

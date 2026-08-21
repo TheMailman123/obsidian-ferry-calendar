@@ -158,12 +158,14 @@ export function upsertSection(
             : `${before.join("\n")}\n${after.length > 0 ? `\n${rest}` : ""}`;
     }
 
+    // The trailing blank line is unconditional: it separates the section from
+    // whatever follows, and ends the body with a newline when nothing does.
     return [
         ...before,
         lines[start],
         "",
         ...content.split("\n"),
-        ...(after.length > 0 ? [""] : [""]),
+        "",
         ...after,
     ].join("\n");
 }

@@ -41,5 +41,16 @@ describe("end date conversion", () => {
         expect(() => exclusiveEndDate("19/03/2026")).toThrow(/Not an ISO date/);
         expect(() => inclusiveEndDate("")).toThrow(/Not an ISO date/);
         expect(() => exclusiveEndDate("2026-13-01")).toThrow(/Not an ISO date/);
+        expect(() => exclusiveEndDate("tomorrow")).toThrow(/Not an ISO date/);
+    });
+
+    it("refuses a partial date rather than guessing at it", () => {
+        // Luxon reads `2026-08` as the 1st of August and `2026` as New Year's
+        // Day. `endDate` is hand-authored and the schema validates nothing, so
+        // both reach here — and shifting one by a day gives a plausible answer
+        // that is not what the note says.
+        expect(() => exclusiveEndDate("2026-08")).toThrow(/Not an ISO date/);
+        expect(() => exclusiveEndDate("2026")).toThrow(/Not an ISO date/);
+        expect(() => exclusiveEndDate("2026-8-1")).toThrow(/Not an ISO date/);
     });
 });

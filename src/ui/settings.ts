@@ -345,8 +345,9 @@ export class FerryCalendarSettingTab extends PluginSettingTab {
                     "Leave empty for none. Existing notes are not touched, and a note's tags are never rewritten after it is created."
             )
             .addText((text) => {
+                let applied = formatTagList(this.plugin.settings.eventTags);
                 text.setPlaceholder("#INVISIBLE");
-                text.setValue(formatTagList(this.plugin.settings.eventTags));
+                text.setValue(applied);
                 text.onChange(async (val) => {
                     // Persisted on every keystroke, but without the cache
                     // reset: the calendars are built holding the tag list, and
@@ -356,8 +357,17 @@ export class FerryCalendarSettingTab extends PluginSettingTab {
                     await this.plugin.savePreferences();
                 });
                 // The rebuild that makes the new list take effect, once, when
-                // the user has finished typing it.
+                // the user has finished typing it — and not at all if they only
+                // clicked through the field, since the rebuild is not free and
+                // announces itself.
                 text.inputEl.addEventListener("blur", async () => {
+                    const current = formatTagList(
+                        this.plugin.settings.eventTags
+                    );
+                    if (current === applied) {
+                        return;
+                    }
+                    applied = current;
                     await this.plugin.saveSettings();
                 });
             });

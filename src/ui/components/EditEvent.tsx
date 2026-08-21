@@ -268,6 +268,13 @@ export const EditEvent = ({
         }
     }, [titleRef]);
 
+    // Nothing to say about the body, so leave it alone: there is no text now
+    // and there was none when the modal opened. Passing `""` would mean "remove
+    // the section", which is a file write on every create and on every save of
+    // a note that never had one.
+    const nothingToSay =
+        description === "" && (initialDescription ?? "") === "";
+
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         await submit(
@@ -326,8 +333,8 @@ export const EditEvent = ({
             calendarIndex,
             // Undefined leaves the note's body alone. A daily-note event is a
             // list item inside a note the user wrote and has no body of its
-            // own, so there is nothing here to write.
-            isDailyNote ? undefined : description
+            // own, so there is nothing here to write either.
+            isDailyNote || nothingToSay ? undefined : description
         );
     };
 
